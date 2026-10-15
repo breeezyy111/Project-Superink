@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project SuperInk</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 4c10 0 20 9 20 22 0 7-3 12-3 17s5 6 5 11-6 7-9 3-3-7-6-4 0 9-7 9-7-6-7-9-3 0-6 4-9 2-9-3 5-6 5-11-3-10-3-17C12 13 22 4 32 4z' fill='%23ff2fa8'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="ui">
+      <!-- Title -->
+      <section id="title" class="screen">
+        <div class="logo-wrap">
+          <div class="project-tag">PROJECT</div>
+          <h1 class="logo"><span>S</span><span>U</span><span>P</span><span>E</span><span>R</span><span>I</span><span>N</span><span>K</span></h1>
+          <div class="logo-sub">Turf War in Splashburg</div>
+        </div>
+        <button id="btn-start" class="blob-btn big">PLAY</button>
+        <div class="title-foot">Inkfins • Grindrail Skatepark • v0.1</div>
+      </section>
+
+      <!-- Locker / customization -->
+      <section id="locker" class="screen hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="tag tilt">LOCKER</div>
+            <h2>Fresh Inkfin</h2>
+          </div>
+          <label class="field">
+            <span>Name</span>
+            <input id="in-name" maxlength="12" value="Player" />
+          </label>
+          <div class="field"><span>Skin</span><div id="sw-skin" class="swatches"></div></div>
+          <div class="field"><span>Fin Hair</span><div id="sw-hair" class="chips"></div></div>
+          <div class="field"><span>Eyes</span><div id="sw-eyes" class="swatches"></div></div>
+          <div class="field"><span>Shirt</span><div id="sw-shirt" class="swatches"></div></div>
+          <div class="field"><span>Weapon</span><div id="weapons" class="weapons"></div></div>
+          <button id="btn-ready" class="blob-btn">READY!</button>
+          <div class="hint">Mouse to aim • Click to shoot • WASD move • Shift / Right-click swim • Space jump</div>
+        </div>
+      </section>
+
+      <!-- In-match HUD -->
+      <section id="hud" class="hidden">
+        <div class="topbar">
+          <div id="team-a" class="team-icons"></div>
+          <div id="timer" class="timer">3:00</div>
+          <div id="team-b" class="team-icons"></div>
+        </div>
+        <svg id="crosshair" viewBox="0 0 100 100">
+          <circle class="ch-ring-bg" cx="50" cy="50" r="22" />
+          <circle id="ch-ink" class="ch-ring" cx="50" cy="50" r="22" />
+          <circle id="ch-charge" class="ch-charge" cx="50" cy="50" r="30" />
+          <circle class="ch-dot" cx="50" cy="50" r="3.5" />
+          <g id="ch-hit" class="ch-hit">
+            <path d="M33 33 L41 41 M67 33 L59 41 M33 67 L41 59 M67 67 L59 59" />
+          </g>
+        </svg>
+        <div id="ink-low" class="ink-low hidden">INK LOW!</div>
+        <div id="weapon-chip" class="weapon-chip"><span id="wc-name">Fizz Blaster</span><div class="ink-bar"><div id="wc-ink"></div></div></div>
+        <div id="feed" class="feed"></div>
+        <div id="big-text" class="big-text hidden"></div>
+        <div id="vignette" class="vignette"></div>
+        <div id="splatted" class="splatted hidden">
+          <div class="spl-title">SPLATTED!</div>
+          <div class="spl-by">by <b id="spl-name">?</b></div>
+          <div class="spl-timer"><div id="spl-bar"></div></div>
+        </div>
+        <div id="click-lock" class="click-lock hidden">Click to play</div>
+      </section>
+
+      <!-- Pause -->
+      <section id="pause" class="screen dim hidden">
+        <div class="panel small">
+          <div class="tag tilt">PAUSED</div>
+          <label class="field row"><span>Look sensitivity</span><input id="in-sens" type="range" min="0.6" max="5" step="0.1" value="2.4" /></label>
+          <label class="field row"><span>Invert Y</span><input id="in-invert" type="checkbox" /></label>
+          <label class="field row"><span>Volume</span><input id="in-vol" type="range" min="0" max="1" step="0.05" value="0.6" /></label>
+          <button id="btn-resume" class="blob-btn">RESUME</button>
+          <button id="btn-quit" class="blob-btn alt">QUIT TO LOCKER</button>
+        </div>
+      </section>
+
+      <!-- Results -->
+      <section id="results" class="screen dim hidden">
+        <div class="results">
+          <div class="tag tilt">RESULTS</div>
+          <div id="res-winner" class="res-winner">...</div>
+          <div class="res-bars">
+            <div class="res-bar"><div id="res-a" class="fill"></div><span id="res-a-pct">0%</span></div>
+            <div class="res-bar"><div id="res-b" class="fill"></div><span id="res-b-pct">0%</span></div>
+          </div>
+          <table id="res-table" class="res-table"></table>
+          <div class="row-btns">
+            <button id="btn-again" class="blob-btn">AGAIN!</button>
+            <button id="btn-locker" class="blob-btn alt">LOCKER</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="loading" class="screen"><div class="loader">Mixing ink...</div></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
