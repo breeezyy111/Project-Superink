@@ -1,9 +1,9 @@
 # PlayFab setup
 
-SuperInk uses PlayFab for optional accounts. Without it the game still runs, but saves only in the browser.
+SuperInk uses PlayFab for optional accounts. If PlayFab can't be reached, the game still runs and saves only in the browser.
 
-1. **Create a title** at https://developer.playfab.com (Game Manager) and copy its **Title ID**.
-2. **Add the Title ID**: copy `.env.example` to `.env` and set `VITE_PLAYFAB_TITLE_ID=XXXXX`, then restart `npm run dev`.
+1. **Title ID**: SuperInk's title is **`90E97`**, built into `src/online/PlayFab.ts`.
+   To point at a different (e.g. test) title, copy `.env.example` to `.env`, set `VITE_PLAYFAB_TITLE_ID=XXXXX`, and restart `npm run dev`.
    The Title ID is public. Never put the **Developer Secret Key** in the game or the repo.
 3. **Upload the CloudScript** in `playfab/cloudscript.js`: Game Manager > Automation > CloudScript >
    Revisions (Legacy) > Upload new revision, then tick **Deploy**. This gives guests their

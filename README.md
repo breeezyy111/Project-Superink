@@ -21,8 +21,8 @@ When you press PLAY, an optional (but recommended) **Splashburg ID** page lets y
 - Sign in with your username or email on any device. Progress is saved to your PlayFab account, and the game remembers you until you sign out.
 - Click your profile in the top-left of the plaza to sign up, sign in or sign out.
 
-To turn it on, follow [`playfab/SETUP.md`](playfab/SETUP.md): put your Title ID in `.env` and upload `playfab/cloudscript.js`.
-Without a Title ID, the game still runs and saves progress in the browser only.
+The game uses PlayFab title `90E97`. Guest names need `playfab/cloudscript.js` uploaded. See [`playfab/SETUP.md`](playfab/SETUP.md).
+If PlayFab can't be reached, the game still runs and saves progress in the browser only.
 
 ## Controls (mouse + keyboard)
 

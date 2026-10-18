@@ -3,7 +3,8 @@
  * Only the public Title ID lives in the client. Never put the developer secret key here.
  */
 
-export const TITLE_ID: string = (import.meta.env.VITE_PLAYFAB_TITLE_ID ?? '').trim();
+/** SuperInk's PlayFab title. Override with VITE_PLAYFAB_TITLE_ID (e.g. for a test title). */
+export const TITLE_ID: string = (import.meta.env.VITE_PLAYFAB_TITLE_ID || '90E97').trim();
 
 export class PlayFabError extends Error {
   constructor(readonly code: string, message: string, readonly details?: Record<string, string[]>) {
