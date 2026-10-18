@@ -3,52 +3,28 @@ import '@fontsource/baloo-2/600.css';
 import '@fontsource/baloo-2/800.css';
 import './style.css';
 import * as THREE from 'three';
+import { Music } from './audio/Music';
 import { Sfx } from './audio/Sfx';
 import { Renderer } from './engine/Renderer';
-import { DEFAULT_LOOK, EYE_COLORS, HAIR_NAMES, Look, SHIRT_COLORS, SKIN_TONES } from './game/InkfinModel';
-import { Match } from './game/Match';
+import { Hub, HUB_DEF, ZONES } from './game/Hub';
+import { kit } from './game/items';
+import { Match, MatchSummary } from './game/Match';
 import { PlayerController } from './game/PlayerController';
-import { WeaponKind, WEAPONS } from './game/weapons';
-import { InkSystem } from './ink/InkSystem';
+import { addXp, loadProfile, saveProfile, xpToNext } from './game/profile';
+import { WEAPONS } from './game/weapons';
 import { CUTTLE_SVG, Hud } from './ui/Hud';
 import { LockerStage } from './ui/LockerStage';
-import { Physics } from './world/Physics';
-import { SkateparkMap } from './world/SkateparkMap';
+import { ShopUI } from './ui/Shops';
+import { Stage, StageDef } from './world/Stage';
+import { stageById, STAGES } from './world/stages';
 
-type Screen = 'title' | 'locker' | 'match' | 'results';
+type Screen = 'title' | 'hub' | 'match' | 'results';
 
 const $ = (id: string) => document.getElementById(id)!;
 const params = new URLSearchParams(location.search);
 
-interface Profile {
-  name: string;
-  look: Look;
-  weapon: WeaponKind;
-  sens: number;
-  invert: boolean;
-  volume: number;
-}
-
-function loadProfile(): Profile {
-  const def: Profile = { name: 'Player', look: { ...DEFAULT_LOOK }, weapon: 'shooter', sens: 2.4, invert: false, volume: 0.6 };
-  try {
-    const raw = localStorage.getItem('superink.profile');
-    if (raw) return { ...def, ...JSON.parse(raw), look: { ...def.look, ...JSON.parse(raw).look } };
-  } catch {
-    /* storage unavailable */
-  }
-  return def;
-}
-function saveProfile(p: Profile) {
-  try {
-    localStorage.setItem('superink.profile', JSON.stringify(p));
-  } catch {
-    /* ignore */
-  }
-}
-
 async function boot() {
-  // make sure the display font is ready before graffiti textures are drawn
+  // make sure the display font is ready before signs and graffiti are drawn
   try {
     await document.fonts.load('900 64px "Titan One"');
   } catch {
@@ -56,35 +32,72 @@ async function boot() {
   }
 
   const r = new Renderer($('app'));
-  const physics = await Physics.create();
-  const ink = new InkSystem();
-  const map = new SkateparkMap(physics, ink);
-  r.scene.add(map.group);
-  physics.step(); // build query structures for the static map
-
   const sfx = new Sfx();
+  const music = new Music();
   const hud = new Hud();
   const controller = new PlayerController(r.renderer.domElement);
   const profile = loadProfile();
+  const save = () => saveProfile(profile);
   sfx.volume = profile.volume;
+  music.volume = profile.music;
   controller.sensitivity = profile.sens / 1000;
   controller.invertY = profile.invert;
+  music.onNowPlaying = (b) => {
+    const el = $('now-playing');
+    el.textContent = `♪ ${b.band} — "${b.song}"`;
+    el.classList.remove('hidden');
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = '';
+  };
 
-  const locker = new LockerStage(r.studioEnv, '#ff2fa8');
-  locker.setLook(profile.look, profile.weapon);
-  locker.resize(window.innerWidth, window.innerHeight);
-  window.addEventListener('resize', () => locker.resize(window.innerWidth, window.innerHeight));
+  const preview = new LockerStage(r.studioEnv, '#ff2fa8');
+  preview.setLook(profile.look, kit(profile.kit).main);
+  preview.resize(window.innerWidth, window.innerHeight);
+  window.addEventListener('resize', () => preview.resize(window.innerWidth, window.innerHeight));
 
   let screen: Screen = 'title';
+  let stage: Stage | null = null;
   let match: Match | null = null;
+  let hub: Hub | null = null;
   let paused = false;
+  let busy = false;
+  let lookDirty = false;
   let orbit = 0;
+  let lastStageId = '';
 
   const show = (id: string, v: boolean) => $(id).classList.toggle('hidden', !v);
+  const loading = (v: boolean) => show('loading', v);
+  const unlockAudio = () => {
+    sfx.unlock();
+    music.attach(sfx.context);
+  };
 
-  const newMatch = (demo: boolean) => {
+  const teardown = () => {
     match?.dispose();
-    match = new Match(r, physics, ink, map, sfx, demo ? null : controller, {
+    match = null;
+    hub?.dispose();
+    hub = null;
+    stage?.dispose(r.scene);
+    stage = null;
+  };
+
+  const loadStage = async (def: StageDef) => {
+    teardown();
+    stage = await Stage.create(def);
+    r.scene.add(stage.group);
+    return stage;
+  };
+
+  const pickStage = () => {
+    if (params.get('stage')) return stageById(params.get('stage')!);
+    if (profile.stage !== 'random') return stageById(profile.stage);
+    const pool = STAGES.filter((s) => s.id !== lastStageId);
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
+
+  const newMatch = (st: Stage, demo: boolean) => {
+    match = new Match(r, st, sfx, demo ? null : controller, {
       onFeed: (t, k) => hud.pushFeed(t, k),
       onPlayerSplatted: (by) => hud.showSplatted(by),
       onPlayerRespawn: () => hud.hideSplatted(),
@@ -99,136 +112,129 @@ async function boot() {
         }
         if (p === 'done') showResults();
       },
-    }, { look: profile.look, weapon: profile.weapon, name: profile.name || 'Player', demo });
+    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty });
     hud.setup(match);
   };
 
+  const hideAll = () => {
+    for (const id of ['title', 'hub-hud', 'shop', 'hud', 'results', 'pause']) show(id, false);
+  };
+
   // ---------- title ----------
-  const goTitle = () => {
+  const goTitle = async () => {
     screen = 'title';
+    hideAll();
     show('title', true);
-    show('locker', false);
-    show('hud', false);
-    show('results', false);
-    newMatch(true);
+    const st = await loadStage(STAGES[Math.floor(Math.random() * STAGES.length)]);
+    newMatch(st, true);
+    loading(false);
   };
   $('btn-start').addEventListener('click', () => {
-    sfx.unlock();
+    unlockAudio();
     sfx.ui();
-    goLocker();
+    goHub(true);
+  });
+  $('btn-start').insertAdjacentHTML('afterbegin', `<span style="display:inline-block;width:40px;height:40px;vertical-align:-6px;margin-right:10px">${CUTTLE_SVG('#ff2fa8')}</span>`);
+
+  // ---------- hub ----------
+  const updateProfileChip = () => {
+    $('pc-level').textContent = String(profile.level);
+    $('pc-name').textContent = profile.name;
+    $('pc-coins').textContent = profile.coins.toLocaleString();
+    $('pc-xp').style.width = `${Math.min(100, (profile.xp / xpToNext(profile.level)) * 100)}%`;
+  };
+
+  const goHub = async (lock = false) => {
+    if (busy) return;
+    busy = true;
+    loading(true);
+    controller.releaseLock();
+    hideAll();
+    const st = await loadStage(HUB_DEF);
+    hub = new Hub(r, st, sfx, controller, { look: profile.look, kit: kit(profile.kit), name: profile.name });
+    screen = 'hub';
+    paused = false;
+    show('hub-hud', true);
+    updateProfileChip();
+    music.play('tidepool');
+    loading(false);
+    busy = false;
+    if (lock) controller.requestLock();
+  };
+
+  const shop = new ShopUI({
+    profile,
+    sfx,
+    preview,
+    save,
+    onLookChanged: () => {
+      lookDirty = true;
+      updateProfileChip();
+    },
+    onClose: () => {
+      if (!hub) return;
+      hub.inShop = false;
+      if (lookDirty) hub.refreshPlayer(profile.look, kit(profile.kit), profile.name);
+      lookDirty = false;
+      show('hub-hud', true);
+      controller.requestLock();
+    },
+    onBattle: () => {
+      unlockAudio();
+      startMatch();
+    },
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && shop.open) shop.close();
   });
 
-  // ---------- locker ----------
-  const buildLocker = () => {
-    const swatches = (el: HTMLElement, list: string[], get: () => string, set: (c: string) => void) => {
-      el.innerHTML = '';
-      for (const c of list) {
-        const b = document.createElement('div');
-        b.className = 'swatch' + (get() === c ? ' sel' : '');
-        b.style.background = c;
-        b.onclick = () => {
-          set(c);
-          sfx.ui();
-          refresh();
-        };
-        el.appendChild(b);
-      }
-    };
-    const refresh = () => {
-      swatches($('sw-skin'), SKIN_TONES, () => profile.look.skin, (c) => (profile.look.skin = c));
-      swatches($('sw-eyes'), EYE_COLORS, () => profile.look.eyes, (c) => (profile.look.eyes = c));
-      swatches($('sw-shirt'), SHIRT_COLORS, () => profile.look.shirt, (c) => (profile.look.shirt = c));
-      const hair = $('sw-hair');
-      hair.innerHTML = '';
-      HAIR_NAMES.forEach((n, i) => {
-        const b = document.createElement('div');
-        b.className = 'chip' + (profile.look.hair === i ? ' sel' : '');
-        b.textContent = n;
-        b.onclick = () => {
-          profile.look.hair = i as Look['hair'];
-          sfx.ui();
-          refresh();
-        };
-        hair.appendChild(b);
-      });
-      const wl = $('weapons');
-      wl.innerHTML = '';
-      for (const w of Object.values(WEAPONS)) {
-        const card = document.createElement('div');
-        card.className = 'wcard' + (profile.weapon === w.kind ? ' sel' : '');
-        const bar = (label: string, v: number) =>
-          `<div class="stat"><span>${label}</span><div class="bar"><div style="width:${v * 100}%"></div></div></div>`;
-        card.innerHTML = `<div class="wn">${w.name}</div><div class="wb">${w.blurb}</div>
-          <div class="stats">${bar('RANGE', w.stats.range)}${bar('DAMAGE', w.stats.damage)}${bar('RATE', w.stats.fireRate)}${bar('MOBILITY', w.stats.mobility)}</div>`;
-        card.onclick = () => {
-          profile.weapon = w.kind;
-          sfx.ui();
-          refresh();
-        };
-        wl.appendChild(card);
-      }
-      locker.setLook(profile.look, profile.weapon);
-      saveProfile(profile);
-    };
-    const nameIn = $('in-name') as HTMLInputElement;
-    nameIn.value = profile.name;
-    nameIn.oninput = () => {
-      profile.name = nameIn.value.trim().slice(0, 12) || 'Player';
-      saveProfile(profile);
-    };
-    refresh();
-  };
-
-  const goLocker = () => {
-    screen = 'locker';
-    match?.dispose();
-    match = null;
-    controller.releaseLock();
-    show('title', false);
-    show('hud', false);
-    show('results', false);
-    show('pause', false);
-    show('locker', true);
-    buildLocker();
-  };
-
-  const startMatch = () => {
-    sfx.unlock();
+  // ---------- match ----------
+  const startMatch = async () => {
+    if (busy) return;
+    busy = true;
+    loading(true);
+    hideAll();
+    const def = pickStage();
+    lastStageId = def.id;
+    const st = await loadStage(def);
     screen = 'match';
     paused = false;
-    show('locker', false);
-    show('results', false);
-    show('pause', false);
     show('hud', true);
-    newMatch(false);
+    newMatch(st, params.has('demo'));
+    music.playRandomBattle();
+    loading(false);
+    busy = false;
     controller.requestLock();
   };
-  $('btn-ready').addEventListener('click', () => {
-    sfx.ui();
-    startMatch();
-  });
 
   // ---------- pause ----------
   const sens = $('in-sens') as HTMLInputElement;
   const inv = $('in-invert') as HTMLInputElement;
   const vol = $('in-vol') as HTMLInputElement;
+  const mus = $('in-music') as HTMLInputElement;
   sens.value = String(profile.sens);
   inv.checked = profile.invert;
   vol.value = String(profile.volume);
+  mus.value = String(profile.music);
   sens.oninput = () => {
     profile.sens = parseFloat(sens.value);
     controller.sensitivity = profile.sens / 1000;
-    saveProfile(profile);
+    save();
   };
   inv.onchange = () => {
     profile.invert = inv.checked;
     controller.invertY = inv.checked;
-    saveProfile(profile);
+    save();
   };
   vol.oninput = () => {
     profile.volume = parseFloat(vol.value);
     sfx.volume = profile.volume;
-    saveProfile(profile);
+    save();
+  };
+  mus.oninput = () => {
+    profile.music = parseFloat(mus.value);
+    music.volume = profile.music;
+    save();
   };
   controller.onPause = () => {
     if (screen === 'match' && match && match.phase !== 'finish' && match.phase !== 'done') {
@@ -241,10 +247,7 @@ async function boot() {
     show('pause', false);
     controller.requestLock();
   });
-  $('btn-quit').addEventListener('click', () => {
-    paused = false;
-    goLocker();
-  });
+  $('btn-quit').addEventListener('click', () => goHub(true));
 
   // ---------- results ----------
   const showResults = () => {
@@ -253,12 +256,13 @@ async function boot() {
     controller.releaseLock();
     hud.hideBig();
     const m = match;
-    const [a, b] = ink.turf();
-    const win: 0 | 1 = a >= b ? 0 : 1;
+    const sum: MatchSummary = m.summary();
+    const [a, b] = sum.turf;
     show('results', true);
+    $('res-stage').textContent = m.stage.def.name;
     const winner = $('res-winner');
-    winner.textContent = win === 0 ? 'YOUR TEAM WINS!' : 'DEFEAT...';
-    winner.style.color = m.colorOf(win);
+    winner.textContent = sum.win ? 'YOUR TEAM WINS!' : 'DEFEAT...';
+    winner.style.color = m.colorOf(sum.win ? 0 : 1);
     const fa = $('res-a'), fb = $('res-b');
     fa.style.background = m.pair.alpha;
     fb.style.background = m.pair.bravo;
@@ -273,30 +277,51 @@ async function boot() {
         fb.style.width = `${Math.max(4, (b / total) * 100)}%`;
       }),
     );
+
+    // rewards
+    const coins = Math.round(sum.paintedM2 * 3 + (sum.win ? 400 : 120) + sum.splats * 30);
+    const xp = Math.round(sum.paintedM2 * 2 + (sum.win ? 300 : 100));
+    profile.coins += coins;
+    const levels = addXp(profile, xp);
+    save();
+    const rw = $('res-rewards');
+    rw.innerHTML = '';
     setTimeout(() => {
       $('res-a-pct').textContent = `${(a * 100).toFixed(1)}%`;
       $('res-b-pct').textContent = `${(b * 100).toFixed(1)}%`;
       sfx.whistle();
+      const items = [`${Math.round(sum.paintedM2)}p turf`, `<span class="coin-ico"></span>+${coins}`, `+${xp} XP`];
+      items.forEach((t, i) => {
+        const el = document.createElement('div');
+        el.className = 'rw';
+        el.style.animationDelay = `${i * 0.15}s`;
+        el.innerHTML = t;
+        rw.appendChild(el);
+      });
+      if (levels > 0) {
+        const el = document.createElement('div');
+        el.className = 'rw lvl';
+        el.style.animationDelay = '0.5s';
+        el.textContent = `LEVEL UP! Lv ${profile.level}`;
+        rw.appendChild(el);
+      }
+      sfx.coin();
     }, 2300);
-    const rows = m.characters
+    $('res-table').innerHTML = m.characters
       .map(
         (c) => `<tr class="${c.isPlayer ? 'me' : ''}"><td><span class="dot" style="background:${m.colorOf(c.team)}"></span></td>
-        <td>${escapeHtml(c.name)}</td><td>${WEAPONS[c.weapon.kind].name}</td><td>${c.splats} splats</td><td>${c.deaths} falls</td></tr>`,
+        <td>${escapeHtml(c.name)}</td><td>${WEAPONS[c.weapon.kind].name}</td><td>${Math.round(c.painted / 9)}p</td><td>${c.splats} splats</td><td>${c.deaths} falls</td></tr>`,
       )
       .join('');
-    $('res-table').innerHTML = rows;
   };
   $('btn-again').addEventListener('click', () => {
     sfx.ui();
     startMatch();
   });
-  $('btn-locker').addEventListener('click', () => {
+  $('btn-hub').addEventListener('click', () => {
     sfx.ui();
-    goLocker();
+    goHub(true);
   });
-
-  // little cuttlefish next to the PLAY button
-  $('btn-start').insertAdjacentHTML('afterbegin', `<span style="display:inline-block;width:40px;height:40px;vertical-align:-6px;margin-right:10px">${CUTTLE_SVG('#ff2fa8')}</span>`);
 
   // ---------- main loop ----------
   const timer = new THREE.Timer();
@@ -305,21 +330,41 @@ async function boot() {
     requestAnimationFrame(tick);
     timer.update();
     const dt = Math.min(timer.getDelta(), 1 / 20);
+    controller.allowLock = (screen === 'match' && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open);
 
-    if (screen === 'locker') {
-      locker.update(dt);
-      r.renderer.render(locker.scene, locker.camera);
+    if (screen === 'hub' && hub) {
+      if (!shop.open && hub.nearZone && controller.consume('KeyE')) {
+        hub.inShop = true;
+        controller.releaseLock();
+        show('hub-hud', false);
+        preview.setLook(profile.look, kit(profile.kit).main);
+        shop.show(hub.nearZone.id);
+        sfx.ui();
+      }
+      hub.update(dt);
+      const z = hub.nearZone;
+      show('hub-prompt', !!z && !shop.open);
+      if (z) $('hub-prompt-text').textContent = z.id === 'tower' ? 'Enter Turf Tower (Battle!)' : `Enter ${z.name}`;
+      show('hub-lock', !controller.locked && !shop.open);
+      if (shop.open) {
+        preview.update(dt);
+        r.renderer.render(preview.scene, preview.camera);
+        return;
+      }
+      r.render();
       return;
     }
-    controller.allowLock = screen === 'match' && !paused && !params.has('demo');
+
     if (match && !paused) match.update(dt);
     if (match) {
       if (params.has('follow') && screen === 'match') {
-        controller.follow(dt, match.player, r.camera, physics);
+        controller.follow(dt, match.player, r.camera, match.physics);
         hud.update(match);
       } else if (screen === 'title' || (params.has('demo') && screen === 'match')) {
         orbit += dt * 0.06;
-        r.camera.position.set(Math.sin(orbit) * 42, 26, Math.cos(orbit) * 42);
+        const info = match.stage.info.bounds;
+        const rad = Math.max(info.maxX, info.maxZ) * 0.95;
+        r.camera.position.set(Math.sin(orbit) * rad, 26, Math.cos(orbit) * rad);
         r.camera.lookAt(0, 0, 0);
       } else if (screen === 'match' || screen === 'results') {
         match.spectate(dt, r.camera);
@@ -330,27 +375,30 @@ async function boot() {
     r.render();
   };
 
-  $('loading').classList.add('hidden');
-  if (params.has('play')) {
-    // dev shortcut: jump straight into a match (?play or ?play&demo)
-    screen = 'match';
-    show('title', false);
-    show('hud', true);
-    newMatch(params.has('demo'));
-  } else {
-    goTitle();
-  }
-  tick();
-
-  // expose for debugging in the console
+  // expose for debugging/testing in the console
   (window as unknown as { superink: unknown }).superink = {
     get match() { return match; },
-    ink, physics, r, locker,
-    /** advance the simulation without rendering (for testing) */
+    get hub() { return hub; },
+    get screen() { return screen; },
+    r, preview, profile, shop, controller, music, zones: ZONES,
+    goHub, startMatch,
     step(n = 60, dt = 1 / 60) {
-      for (let i = 0; i < n; i++) match?.update(dt);
+      for (let i = 0; i < n; i++) {
+        match?.update(dt);
+        hub?.update(dt);
+      }
     },
   };
+
+  tick();
+  if (params.has('play')) {
+    await startMatch();
+  } else if (params.has('hub')) {
+    await goHub();
+  } else {
+    await goTitle();
+  }
+  loading(false);
 }
 
 function escapeHtml(s: string) {

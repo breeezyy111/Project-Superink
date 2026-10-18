@@ -1,5 +1,6 @@
 import { INK_TANK, RESPAWN_SECONDS } from '../config';
 import type { Match } from '../game/Match';
+import { SPECIALS, SUBS } from '../game/items';
 import { WEAPONS } from '../game/weapons';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -30,6 +31,9 @@ export class Hud {
   private clickLock = $('click-lock');
   private crosshair = $('crosshair');
   private lastIconsKey = '';
+  private sgFill = $('sg-fill') as unknown as SVGCircleElement;
+  private sgLabel = $('sg-label');
+  private sg = $('special-gauge');
 
   show(v: boolean) {
     this.root.classList.toggle('hidden', !v);
@@ -39,6 +43,11 @@ export class Hud {
     document.documentElement.style.setProperty('--ink-a', m.pair.alpha);
     document.documentElement.style.setProperty('--ink-b', m.pair.bravo);
     this.wcName.textContent = WEAPONS[m.player.weapon.kind].name;
+    const kit = m.player.kitState.kit;
+    $('wc-sub').textContent = SUBS[kit.sub].name;
+    $('wc-special').textContent = SPECIALS[kit.special].name;
+    $('sg-name').textContent = SPECIALS[kit.special].name;
+    $('wc-sub-mark').style.left = `${(SUBS[kit.sub].cost / INK_TANK.max) * 100}%`;
     this.wcInk.style.background = m.pair.alpha;
     this.vignette.style.setProperty('--hurt', hexA(m.pair.bravo, 0.85));
     this.feed.innerHTML = '';
@@ -121,6 +130,11 @@ export class Hud {
     this.inkLow.classList.toggle('hidden', !(inkFrac < 0.12 && p.alive && m.phase === 'play'));
     this.wcInk.style.width = `${inkFrac * 100}%`;
     this.crosshair.style.opacity = p.alive && m.phase === 'play' ? (p.swimming ? '0.35' : '1') : '0';
+
+    const sp = p.specialT > 0 ? 0 : p.special;
+    this.sgFill.style.strokeDashoffset = String(263.9 * (1 - sp / 100));
+    this.sgLabel.textContent = p.specialT > 0 ? 'GO!' : sp >= 100 ? 'Q!' : `${Math.floor(sp)}%`;
+    this.sg.classList.toggle('ready', sp >= 100);
 
     const hurt = p.alive ? 1 - p.hp / 100 : 0;
     this.vignette.style.opacity = String(Math.min(1, hurt * 1.2));

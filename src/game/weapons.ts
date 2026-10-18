@@ -3,7 +3,7 @@ import { InkSystem } from '../ink/InkSystem';
 import type { Character } from './Character';
 import type { GameCtx } from './types';
 
-export type WeaponKind = 'shooter' | 'roller' | 'charger';
+export type WeaponKind = 'shooter' | 'roller' | 'charger' | 'blaster';
 
 export interface WeaponSpec {
   kind: WeaponKind;
@@ -32,6 +32,12 @@ export const WEAPONS: Record<WeaponKind, WeaponSpec> = {
     blurb: 'Hold to charge, release for a long-range splat that streaks ink across the map.',
     stats: { range: 1.0, damage: 1.0, fireRate: 0.2, mobility: 0.35 },
   },
+  blaster: {
+    kind: 'blaster',
+    name: 'Boom Blaster',
+    blurb: 'Lobs slow, heavy ink shells that burst on impact. A direct hit splats!',
+    stats: { range: 0.45, damage: 0.9, fireRate: 0.3, mobility: 0.65 },
+  },
 };
 
 const tmp = new THREE.Vector3();
@@ -54,6 +60,7 @@ export class WeaponState {
     if (!ch.input.fire || ch.swimming) return 1;
     if (this.kind === 'shooter') return 0.72;
     if (this.kind === 'charger') return 0.32;
+    if (this.kind === 'blaster') return 0.6;
     if (this.kind === 'roller') return this.rolling ? 0.85 : 0.45;
     return 1;
   }
@@ -80,6 +87,14 @@ export class WeaponState {
           this.cooldown = 0.115;
           ch.ink -= 0.9;
           this.fireShooter(ch, ctx);
+        }
+        break;
+
+      case 'blaster':
+        if (fire && this.cooldown <= 0 && ch.ink >= 8) {
+          this.cooldown = 0.8;
+          ch.ink -= 8;
+          this.fireBlaster(ch, ctx);
         }
         break;
 
@@ -136,6 +151,18 @@ export class WeaponState {
     ctx.sfx.shoot(ctx.listener.distanceTo(muzzle), ch.isPlayer);
   }
 
+  private fireBlaster(ch: Character, ctx: GameCtx) {
+    const muzzle = ch.muzzle(tmp);
+    const dir = ch.aimDirFrom(muzzle, tmp2);
+    ctx.projectiles.spawn({
+      pos: muzzle, vel: dir.multiplyScalar(24), team: ch.team, owner: ch,
+      damage: 125, paintR: 1.1, size: 0.26, gravDelay: 0.18, falloff: 1,
+      explode: { radius: 2.3, max: 60, min: 30 }, maxAge: 0.55,
+    });
+    ctx.sfx.flick(ctx.listener.distanceTo(muzzle));
+    ch.model.pop();
+  }
+
   private flick(ch: Character, ctx: GameCtx) {
     const muzzle = ch.muzzle(tmp);
     const base = ch.aimDirFrom(muzzle, tmp2);
@@ -164,7 +191,7 @@ export class WeaponState {
     for (const s of [-0.5, 0, 0.5]) {
       const p = front.clone().addScaledVector(right, s);
       const hit = ctx.physics.raycast(p, DOWN, 1.2);
-      if (hit && hit.inkable) ctx.ink.paint([{ x: hit.point.x, y: hit.point.y, z: hit.point.z, r: 0.5 }], ch.team);
+      if (hit && hit.inkable) ctx.paintBy(ch, [{ x: hit.point.x, y: hit.point.y, z: hit.point.z, r: 0.5 }]);
     }
     // run-over damage
     for (const c of ctx.characters) {
@@ -187,6 +214,9 @@ export class WeaponState {
     const range = 9 + 23 * c;
     const mapHit = ctx.physics.raycast(muzzle, dir, range);
     let end = mapHit ? mapHit.dist : range;
+    const shieldT = ctx.gadgets.shieldRay(muzzle, dir, end, ch.team);
+    const blocked = shieldT < end;
+    if (blocked) end = shieldT;
     // characters along the line
     let target: Character | null = null;
     const ch3 = new THREE.Vector3();
@@ -204,8 +234,9 @@ export class WeaponState {
     }
     const endPt = muzzle.clone().addScaledVector(dir, end);
     if (target) ctx.damage(target, full ? 160 : 40 + 80 * c, ch);
+    else if (blocked) ctx.effects.burst(muzzle.clone().addScaledVector(dir, end), null, ctx.colorOf(ch.team), 8, 4, 0.07);
     else if (mapHit && mapHit.inkable) {
-      ctx.ink.paint(InkSystem.pattern(mapHit.point, mapHit.normal, 0.7 + 0.6 * c, 6), ch.team);
+      ctx.paintBy(ch, InkSystem.pattern(mapHit.point, mapHit.normal, 0.7 + 0.6 * c, 6));
       ctx.effects.burst(mapHit.point, mapHit.normal, ctx.colorOf(ch.team), 10, 5, 0.08);
     }
     // ink trail streaked along the floor under the shot
@@ -214,7 +245,7 @@ export class WeaponState {
       if (Math.random() > 0.25 + 0.6 * c) continue;
       const p = muzzle.clone().addScaledVector(dir, t);
       const hit = ctx.physics.raycast(p, DOWN, 3.5);
-      if (hit && hit.inkable) ctx.ink.paint([{ x: hit.point.x, y: hit.point.y, z: hit.point.z, r: 0.32 + 0.22 * c }], ch.team);
+      if (hit && hit.inkable) ctx.paintBy(ch, [{ x: hit.point.x, y: hit.point.y, z: hit.point.z, r: 0.32 + 0.22 * c }]);
     }
     ctx.effects.tracer(muzzle, endPt, ctx.colorOf(ch.team), full ? 0.09 : 0.05);
     ctx.sfx.charger(ctx.listener.distanceTo(muzzle), full);
@@ -261,6 +292,18 @@ export function buildWeaponModel(kind: WeaponKind, inkMat: THREE.Material): { mo
     tip.rotation.x = Math.PI;
     tip.position.y = -0.88;
     g.add(barrel, stock, tank, scope, tip);
+  } else if (kind === 'blaster') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.36, 16), glossy('#f2f2f2'));
+    body.position.y = -0.14;
+    const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.06, 0.12, 16, 1, true), dark);
+    bell.position.y = -0.36;
+    const tank = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), inkMat);
+    tank.position.set(0, -0.08, 0.12);
+    const fin1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.14, 0.12), accent);
+    fin1.position.set(0, -0.18, -0.1);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.14), dark);
+    grip.position.set(0, 0.06, -0.08);
+    g.add(body, bell, tank, fin1, grip);
   } else {
     const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 10), dark);
     handle.position.y = -0.45;

@@ -57,3 +57,6 @@ export const COLL_GROUP_MAP = 0x0001;
 export const COLL_GROUP_CHAR = 0x0002;
 // Rapier interaction group helper: membership << 16 | filter
 export const groups = (member: number, filter: number) => (member << 16) | filter;
+
+/** Special gauge gained per ownership cell painted (gauge is 0..100). */
+export const SPECIAL_PER_CELL = 0.05;

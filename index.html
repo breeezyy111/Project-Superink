@@ -17,27 +17,38 @@
           <div class="logo-sub">Turf War in Splashburg</div>
         </div>
         <button id="btn-start" class="blob-btn big">PLAY</button>
-        <div class="title-foot">Inkfins • Grindrail Skatepark • v0.1</div>
+        <div class="title-foot">Inkfins • Splashburg • v0.2</div>
       </section>
 
-      <!-- Locker / customization -->
-      <section id="locker" class="screen hidden">
-        <div class="panel">
-          <div class="panel-head">
-            <div class="tag tilt">LOCKER</div>
-            <h2>Fresh Inkfin</h2>
+      <!-- Hub HUD -->
+      <section id="hub-hud" class="hidden">
+        <div class="profile-chip">
+          <div class="lv">Lv <b id="pc-level">1</b></div>
+          <div class="pc-body">
+            <div id="pc-name" class="pc-name">Player</div>
+            <div class="xp-bar"><div id="pc-xp"></div></div>
           </div>
-          <label class="field">
-            <span>Name</span>
-            <input id="in-name" maxlength="12" value="Player" />
-          </label>
-          <div class="field"><span>Skin</span><div id="sw-skin" class="swatches"></div></div>
-          <div class="field"><span>Fin Hair</span><div id="sw-hair" class="chips"></div></div>
-          <div class="field"><span>Eyes</span><div id="sw-eyes" class="swatches"></div></div>
-          <div class="field"><span>Shirt</span><div id="sw-shirt" class="swatches"></div></div>
-          <div class="field"><span>Weapon</span><div id="weapons" class="weapons"></div></div>
-          <button id="btn-ready" class="blob-btn">READY!</button>
-          <div class="hint">Mouse to aim • Click to shoot • WASD move • Shift / Right-click swim • Space jump</div>
+          <div class="coins"><span class="coin-ico"></span><b id="pc-coins">0</b></div>
+        </div>
+        <div id="hub-prompt" class="hub-prompt hidden"><kbd>E</kbd> <span id="hub-prompt-text">Enter</span></div>
+        <div class="hub-hint">WASD move • Mouse look • Click shoot • Shift swim • Walk up to a shop and press <kbd>E</kbd></div>
+        <div id="hub-lock" class="click-lock hidden">Click to look around</div>
+      </section>
+
+      <!-- Shop / lobby overlay -->
+      <section id="shop" class="screen hidden">
+        <div class="shop-panel">
+          <div class="shop-head">
+            <div id="shop-tag" class="tag tilt">SHOP</div>
+            <h2 id="shop-name">Shop</h2>
+            <div id="shop-quote" class="shop-quote">...</div>
+          </div>
+          <div id="shop-tabs" class="tabs"></div>
+          <div id="shop-body" class="shop-body"></div>
+          <div class="shop-foot">
+            <div class="coins big"><span class="coin-ico"></span><b id="shop-coins">0</b></div>
+            <button id="btn-leave" class="blob-btn alt small">LEAVE</button>
+          </div>
         </div>
       </section>
 
@@ -47,6 +58,11 @@
           <div id="team-a" class="team-icons"></div>
           <div id="timer" class="timer">3:00</div>
           <div id="team-b" class="team-icons"></div>
+        </div>
+        <div id="special-gauge" class="special-gauge">
+          <svg viewBox="0 0 100 100"><circle class="sg-bg" cx="50" cy="50" r="42" /><circle id="sg-fill" class="sg-fill" cx="50" cy="50" r="42" /></svg>
+          <div id="sg-label" class="sg-label">0%</div>
+          <div id="sg-name" class="sg-name">Squall Cloud</div>
         </div>
         <svg id="crosshair" viewBox="0 0 100 100">
           <circle class="ch-ring-bg" cx="50" cy="50" r="22" />
@@ -58,7 +74,11 @@
           </g>
         </svg>
         <div id="ink-low" class="ink-low hidden">INK LOW!</div>
-        <div id="weapon-chip" class="weapon-chip"><span id="wc-name">Fizz Blaster</span><div class="ink-bar"><div id="wc-ink"></div></div></div>
+        <div id="weapon-chip" class="weapon-chip">
+          <span id="wc-name">Fizz Blaster</span>
+          <div class="ink-bar"><div id="wc-ink"></div><div id="wc-sub-mark" class="sub-mark"></div></div>
+          <div class="wc-sub"><kbd>E</kbd> <span id="wc-sub">Fizz Burst</span> <kbd>Q</kbd> <span id="wc-special">Special</span></div>
+        </div>
         <div id="feed" class="feed"></div>
         <div id="big-text" class="big-text hidden"></div>
         <div id="vignette" class="vignette"></div>
@@ -76,9 +96,10 @@
           <div class="tag tilt">PAUSED</div>
           <label class="field row"><span>Look sensitivity</span><input id="in-sens" type="range" min="0.6" max="5" step="0.1" value="2.4" /></label>
           <label class="field row"><span>Invert Y</span><input id="in-invert" type="checkbox" /></label>
-          <label class="field row"><span>Volume</span><input id="in-vol" type="range" min="0" max="1" step="0.05" value="0.6" /></label>
+          <label class="field row"><span>Sound effects</span><input id="in-vol" type="range" min="0" max="1" step="0.05" value="0.6" /></label>
+          <label class="field row"><span>Music</span><input id="in-music" type="range" min="0" max="1" step="0.05" value="0.45" /></label>
           <button id="btn-resume" class="blob-btn">RESUME</button>
-          <button id="btn-quit" class="blob-btn alt">QUIT TO LOCKER</button>
+          <button id="btn-quit" class="blob-btn alt">BACK TO SPLASHBURG</button>
         </div>
       </section>
 
@@ -86,19 +107,22 @@
       <section id="results" class="screen dim hidden">
         <div class="results">
           <div class="tag tilt">RESULTS</div>
+          <div id="res-stage" class="res-stage"></div>
           <div id="res-winner" class="res-winner">...</div>
           <div class="res-bars">
             <div class="res-bar"><div id="res-a" class="fill"></div><span id="res-a-pct">0%</span></div>
             <div class="res-bar"><div id="res-b" class="fill"></div><span id="res-b-pct">0%</span></div>
           </div>
+          <div id="res-rewards" class="res-rewards"></div>
           <table id="res-table" class="res-table"></table>
           <div class="row-btns">
-            <button id="btn-again" class="blob-btn">AGAIN!</button>
-            <button id="btn-locker" class="blob-btn alt">LOCKER</button>
+            <button id="btn-again" class="blob-btn">BATTLE AGAIN</button>
+            <button id="btn-hub" class="blob-btn alt">SPLASHBURG</button>
           </div>
         </div>
       </section>
 
+      <div id="now-playing" class="now-playing hidden"></div>
       <div id="loading" class="screen"><div class="loader">Mixing ink...</div></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

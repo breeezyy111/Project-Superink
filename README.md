@@ -17,34 +17,52 @@ npm run build      # type-check + production build into dist/
 | Action | Input |
 | --- | --- |
 | Move | WASD |
-| Aim | Mouse (click the game to lock the mouse) |
+| Aim / look | Mouse (click the game to lock the mouse) |
 | Shoot / roll / charge | Left click (hold) |
 | Swim form | Shift or right click (hold) |
 | Jump | Space |
+| Sub weapon | E or middle click |
+| Special (when the gauge is full) | Q |
+| Enter a shop (in Splashburg) | E |
 | Pause / settings | Esc |
 
-## What's in v0.1
+## How it plays
 
-- **Turf War, 4v4 against bots.** 3-minute matches with a READY? / GO! countdown, respawns and a results screen.
-- **Ink:**
-  - Paint lands as thick, glossy blobs that merge together like goo.
-  - Every inkable floor and wall keeps track of which team owns each spot.
-  - Turf is counted on floors only, like Splatoon.
-- **Movement:**
-  - Your ink: swim fast, hide, refill your tank, and climb inked walls.
-  - Enemy ink: slows you and chips away at your health (it can't splat you on its own).
-- **Weapons:**
-  - **Fizz Blaster:** full-auto shooter. Shots drip ink along their path.
-  - **Grind Roller:** a flick that throws a heavy wave of ink, then roll to paint wide stripes and flatten enemies.
-  - **Streak Charger:** hold to charge. A long-range shot that splats in one hit when fully charged and streaks ink along the floor.
-- **Inkfins:**
-  - Kid form with frilly fin hair, W-shaped cuttlefish pupils and an ink tank that shows how much ink you have left.
-  - Swim form is a striped cuttlefish.
-- **Locker:** pick your name, skin tone, three fin hairstyles, eye color, shirt and weapon on a 3D turntable. Your choices are saved.
-- **Grindrail Skatepark:** a mirrored stage in Splashburg with ramps, a quarter pipe, a funbox, towers, un-inkable metal grates and graffiti.
-- **Bots** paint unclaimed turf, fight what they can see, refill in their own ink and get unstuck on their own.
-- **Ink colors** are a random pair each match (Citrus vs Tide, Lemon vs Grape, and others).
-- **Sound effects** are synthesized in the browser, so there are no audio files yet.
+1. **Splashburg Plaza** is the hub. Run around as your Inkfin, paint the plaza, and walk up to a door and press **E**:
+   - **Turf Tower** is the lobby. Pick a stage (or Random) and the bot difficulty, then hit **BATTLE!**
+   - **Fizz & Splash Arms** sells weapon kits.
+   - **Frill Threads** sells headgear, clothes and shoes, and you can try things on before buying.
+   - **Fin Studio** is the salon: name, skin, fin hair, face marking and eyes. It's free.
+   - **Your Locker** holds everything you own, so you can swap gear quickly.
+2. **Turf War** is 4v4 against bots for 3 minutes. Paint the most floor to win.
+3. **Rewards:** you earn coins and XP from the turf you painted, splats, and winning. Leveling up unlocks more items.
+
+## Weapon kits
+
+Every kit is a main weapon plus its own sub weapon and special. Painting fills your special gauge.
+
+| Kit | Main | Sub | Special |
+| --- | --- | --- | --- |
+| Fizz Blaster (Lv 1) | full-auto shooter | **Fizz Burst**: pops on impact | **Squall Cloud**: storm cloud that rains your ink |
+| Grind Roller (Lv 2) | flick, then roll | **Slide Bomb**: skids along the floor painting a lane | **Ink Tsunami**: giant wave that rolls forward |
+| Streak Charger (Lv 3) | long-range charge shot | **Ink Mine**: hidden trap | **Shell Shield**: bubble dome that blocks enemy ink |
+| Boom Blaster (Lv 4) | slow, exploding shells | **Pop Bomb**: bouncy, big blast | **Turbo Jet**: fly up and rain explosive shots |
+
+## Stages
+
+- **Grindrail Skatepark:** ramps, rails and a quarter pipe.
+- **Splashburg Galleria:** a shopping plaza with a fountain, kiosks and upstairs walkways.
+- **Dockside Container Yard:** stacked shipping containers under gantry cranes, by the water.
+- **Skyline Courts:** two rooftops and a basketball court linked by narrow bridges. Falling off the edge splats you.
+- **Seaside Boardwalk:** piers, beach huts and an arcade. Falling into the sea splats you.
+
+## Music
+
+The bands are made up, and the music is generated live in the browser:
+- The Frillkillers (squid-punk)
+- Fin & Tonic (electro-pop)
+- The Cuttle Crew (ink-funk)
+- Tidepool Radio (chill-hop in the plaza)
 
 ## Code map
 
@@ -52,28 +70,36 @@ npm run build      # type-check + production build into dist/
 src/
   config.ts            tuning: speeds, health, ink tank, ink color pairs
   ink/InkSystem.ts     paintable faces, splats, ownership grid, turf %
-  world/               Rapier physics wrapper, skatepark layout, procedural textures
+  world/Stage.ts       stage builder (boxes, ramps, decor) -> meshes + physics + ink
+  world/stages.ts      the five battle stages
+  world/textures.ts    procedural textures (tiles, planks, containers, signs, water...)
   game/Character.ts    movement, swim/climb, health, ink tank
-  game/weapons.ts      Fizz Blaster, Grind Roller, Streak Charger (+ models)
+  game/weapons.ts      Fizz Blaster, Grind Roller, Streak Charger, Boom Blaster (+ models)
   game/Bot.ts          bot AI
-  game/Match.ts        Turf War rules, splats, respawns, phases
+  game/World.ts        shared ink world (painting credit, explosions, damage)
+  game/Match.ts        Turf War rules, splats, respawns, phases, rewards summary
+  game/Hub.ts          Splashburg Plaza: shops, NPCs, door zones
+  game/kit.ts          subs + specials (bombs, mines, cloud, wave, shield, jet)
+  game/items.ts        weapon kits and gear catalog
+  game/profile.ts      coins, XP, levels, inventory (saved in the browser)
   game/InkfinModel.ts  Inkfin kid + cuttlefish models and animation
-  ui/                  HUD and Locker turntable
+  ui/                  HUD, shop screens, 3D try-on turntable
   audio/Sfx.ts         synthesized sound effects
+  audio/Music.ts       procedural band music
 ```
 
 ### Dev URL flags
 
-- `?play`: skip menus and start a match right away.
+- `?play`: skip menus and start a match right away (add `&stage=yard` etc. to pick one).
+- `?hub`: start in Splashburg Plaza.
 - `?play&demo`: bots control every character, with an overhead orbit camera.
 - `?play&demo&follow`: same as above, with the camera chasing your bot-controlled character.
 - `window.superink.step(frames)` in the browser console fast-forwards the simulation.
 
 ## Ideas for what's next
 
-- Sub weapons (bombs) and specials
-- More stages, plus a Splashburg hub plaza
-- Gear with abilities (headgear, clothes, shoes)
-- Music: several fictional Splashburg bands in different genres
+- Gear abilities (like Splatoon's main/sub abilities)
+- Our own mascot / announcers (Judge Jelly is a placeholder name)
 - Other modes (Splat Zones-style), online multiplayer
+- Performance pass (merge character meshes)
 - An Octo Expansion-style story mode (later!)

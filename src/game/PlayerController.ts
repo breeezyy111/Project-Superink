@@ -11,6 +11,8 @@ export class PlayerController {
   private keys = new Set<string>();
   private mouseL = false;
   private mouseR = false;
+  private mouseM = false;
+  private tapped = new Set<string>();
   private pivot = new THREE.Vector3();
   private camDist = 4.4;
   enabled = false;
@@ -22,13 +24,14 @@ export class PlayerController {
   constructor(private canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') return;
+      if (!e.repeat) this.tapped.add(e.code);
       this.keys.add(e.code);
       if (['Space', 'ShiftLeft', 'ShiftRight'].includes(e.code) && this.enabled) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => {
       this.keys.clear();
-      this.mouseL = this.mouseR = false;
+      this.mouseL = this.mouseR = this.mouseM = false;
     });
     canvas.addEventListener('mousedown', (e) => {
       if (!this.locked) {
@@ -38,10 +41,15 @@ export class PlayerController {
       if (!this.enabled) return;
       if (e.button === 0) this.mouseL = true;
       if (e.button === 2) this.mouseR = true;
+      if (e.button === 1) {
+        this.mouseM = true;
+        e.preventDefault();
+      }
     });
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.mouseL = false;
       if (e.button === 2) this.mouseR = false;
+      if (e.button === 1) this.mouseM = false;
     });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('pointerlockchange', () => {
@@ -68,6 +76,13 @@ export class PlayerController {
 
   releaseLock() {
     if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  /** true once per key press (e.g. interact in the hub) */
+  consume(code: string) {
+    const had = this.tapped.has(code);
+    this.tapped.delete(code);
+    return had;
   }
 
   reset(yaw: number) {
@@ -100,6 +115,9 @@ export class PlayerController {
     ch.input.jump = this.enabled && k.has('Space');
     ch.input.swim = this.enabled && (k.has('ShiftLeft') || k.has('ShiftRight') || this.mouseR);
     ch.input.fire = this.enabled && this.mouseL && !ch.input.swim;
+    ch.input.sub = this.enabled && (k.has('KeyE') || this.mouseM);
+    ch.input.special = this.enabled && k.has('KeyQ');
+    this.tapped.clear();
     ch.input.aimYaw = this.yaw;
     ch.input.aimPitch = this.pitch;
     ch.input.aimPoint.copy(this.updateCamera(dt, ch, cam, physics));

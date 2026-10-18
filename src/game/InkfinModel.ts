@@ -1,20 +1,104 @@
 import * as THREE from 'three';
+import { gear, GearItem } from './items';
 import type { WeaponKind } from './weapons';
 
 export interface Look {
   skin: string;
-  hair: 0 | 1 | 2; // 0 Frill, 1 Swoop, 2 Twin Fins
+  hair: 0 | 1 | 2 | 3; // Frill Crown, Swoop Fin, Twin Fins, Short Crop
   eyes: string;
-  shirt: string;
+  mark: 0 | 1 | 2; // Zebra Band, Cheek Fins, Freckle Dots
+  head: string; // gear ids
+  clothes: string;
   shoes: string;
 }
 
 export const SKIN_TONES = ['#ffe0c7', '#f6c9a2', '#e2a77c', '#c07f55', '#8f5a3a', '#5e3b26'];
 export const EYE_COLORS = ['#3b2a8c', '#1f8a5c', '#b0461f', '#1f6fb0', '#8a1f6f', '#333333'];
-export const HAIR_NAMES = ['Frill Crown', 'Swoop Fin', 'Twin Fins'];
-export const SHIRT_COLORS = ['#ffffff', '#2b2b33', '#ffd84d', '#ff6fa8', '#4dd2ff', '#9b7bff'];
+export const HAIR_NAMES = ['Frill Crown', 'Swoop Fin', 'Twin Fins', 'Short Crop'];
+export const MARK_NAMES = ['Zebra Band', 'Cheek Fins', 'Freckle Dots'];
 
-export const DEFAULT_LOOK: Look = { skin: SKIN_TONES[1], hair: 0, eyes: EYE_COLORS[0], shirt: SHIRT_COLORS[0], shoes: '#ffffff' };
+export const DEFAULT_LOOK: Look = {
+  skin: SKIN_TONES[1], hair: 0, eyes: EYE_COLORS[0], mark: 0,
+  head: 'h_none', clothes: 'c_tee_white', shoes: 's_sneaker_white',
+};
+
+const MARK_COLOR = '#1f1b2b';
+
+/** Fabric texture for clothes: stripes / jersey number, white elsewhere (tinted by material color). */
+const clothTexCache = new Map<string, THREE.Texture>();
+function clothTexture(item: GearItem) {
+  if (item.style !== 'stripe') return null;
+  let t = clothTexCache.get(item.id);
+  if (t) return t;
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = item.color;
+  g.fillRect(0, 0, 64, 128);
+  g.fillStyle = item.accent;
+  for (let y = 4; y < 128; y += 22) g.fillRect(0, y, 64, 10);
+  t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  clothTexCache.set(item.id, t);
+  return t;
+}
+
+let checkerTex: THREE.Texture | null = null;
+function checker() {
+  if (checkerTex) return checkerTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    g.fillStyle = (x + y) % 2 ? '#15121c' : '#ffffff';
+    g.fillRect(x * 8, y * 8, 8, 8);
+  }
+  checkerTex = new THREE.CanvasTexture(c);
+  checkerTex.colorSpace = THREE.SRGBColorSpace;
+  checkerTex.wrapS = checkerTex.wrapT = THREE.RepeatWrapping;
+  checkerTex.repeat.set(3, 2);
+  return checkerTex;
+}
+
+const numberCache = new Map<string, THREE.Texture>();
+function numberTexture(color: string) {
+  let t = numberCache.get(color);
+  if (t) return t;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  g.font = '900 100px "Titan One", "Arial Black", sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = color;
+  g.fillText('7', 64, 70);
+  t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  numberCache.set(color, t);
+  return t;
+}
+
+/** A band of sphere surface around the face; `edge(a)` returns [top, bottom] polar angles. */
+function faceBand(r: number, a0: number, a1: number, edge: (a: number) => [number, number], segs = 48) {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const P = (a: number, th: number) => [r * Math.sin(a) * Math.sin(th), r * Math.cos(th), r * Math.cos(a) * Math.sin(th)];
+  for (let i = 0; i <= segs; i++) {
+    const a = a0 + (a1 - a0) * (i / segs);
+    const [t0, t1] = edge(a);
+    pos.push(...P(a, t0), ...P(a, (t0 + t1) / 2), ...P(a, t1));
+    if (i < segs) {
+      const k = i * 3;
+      idx.push(k, k + 3, k + 1, k + 1, k + 3, k + 4, k + 1, k + 4, k + 2, k + 2, k + 4, k + 5);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
 
 const eyeTexCache = new Map<string, THREE.Texture>();
 /** Big cartoony eye with a cuttlefish "W" pupil. */
@@ -148,9 +232,15 @@ export class InkfinModel {
   private buildKid() {
     const L = this.look;
     const skin = glossy(L.skin, { roughness: 0.45, clearcoat: 0.3 });
-    const shirt = new THREE.MeshStandardMaterial({ color: L.shirt, roughness: 0.75 });
+    const cloth = gear(L.clothes);
+    const shoeItem = gear(L.shoes);
+    const ctex = clothTexture(cloth);
+    const shirt = new THREE.MeshStandardMaterial({ color: ctex ? '#ffffff' : cloth.color, map: ctex, roughness: 0.75 });
     const pants = new THREE.MeshStandardMaterial({ color: '#2a2d3a', roughness: 0.7 });
-    const shoe = glossy(L.shoes, { roughness: 0.4 });
+    const shoe = shoeItem.style === 'slipon'
+      ? new THREE.MeshStandardMaterial({ map: checker(), roughness: 0.6 })
+      : glossy(shoeItem.color, { roughness: 0.4 });
+    const shoeAccent = glossy(shoeItem.accent, { roughness: 0.4 });
     const sole = new THREE.MeshStandardMaterial({ color: '#1d1d24', roughness: 0.6 });
     const sock = new THREE.MeshStandardMaterial({ color: '#f4f4f4', roughness: 0.8 });
 
@@ -177,10 +267,17 @@ export class InkfinModel {
       sl.scale.set(1.05, 1, 0.3);
       sl.position.set(0, -0.485, 0.04);
       hip.add(sl);
-      const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.089, 0.016, 6, 16), this.inkMat());
+      const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.089, 0.016, 6, 16), shoeItem.style === 'sneaker' ? this.inkMat() : shoeAccent);
       stripe.rotation.y = Math.PI / 2;
       stripe.position.set(0, -0.42, 0.04);
       hip.add(stripe);
+      if (shoeItem.style === 'hightop') {
+        const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.09, 0.14, 14), shoe);
+        collar.position.set(0, -0.35, 0.0);
+        const lace = new THREE.Mesh(new THREE.CylinderGeometry(0.087, 0.087, 0.025, 14), shoeAccent);
+        lace.position.set(0, -0.3, 0);
+        hip.add(collar, lace);
+      }
       this.kid.add(hip);
       this.legs.push(hip);
     }
@@ -205,6 +302,28 @@ export class InkfinModel {
     const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.12, 12), skin);
     neck.position.y = 0.47;
     this.torso.add(neck);
+    if (cloth.style === 'hoodie') {
+      const hood = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.6), shirt);
+      hood.rotation.x = -1.9;
+      hood.position.set(0, 0.4, -0.1);
+      hood.scale.set(1.1, 1, 0.8);
+      const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.03), new THREE.MeshStandardMaterial({ color: cloth.accent, roughness: 0.8 }));
+      pocket.position.set(0, 0.12, 0.145);
+      const string = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.12, 6), new THREE.MeshStandardMaterial({ color: cloth.accent }));
+      string.position.set(0.04, 0.35, 0.14);
+      const string2 = string.clone();
+      string2.position.x = -0.04;
+      this.torso.add(hood, pocket, string, string2);
+    }
+    if (cloth.style === 'jersey') {
+      const num = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.16), new THREE.MeshStandardMaterial({ map: numberTexture(cloth.accent), transparent: true, roughness: 0.7 }));
+      num.position.set(0, 0.24, 0.147);
+      this.torso.add(num);
+      const back = num.clone();
+      back.position.z = -0.147;
+      back.rotation.y = Math.PI;
+      this.torso.add(back);
+    }
     this.kid.add(this.torso);
 
     // ink tank backpack (shows remaining ink)
@@ -235,7 +354,7 @@ export class InkfinModel {
       const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.18, 6, 10), skin);
       arm.position.y = -0.13;
       sh.add(arm);
-      const sleeve = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 10), shirt);
+      const sleeve = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 10), cloth.style === 'tank' ? skin : shirt);
       sleeve.scale.set(1, 0.9, 1);
       sleeve.position.y = -0.02;
       sh.add(sleeve);
@@ -266,12 +385,46 @@ export class InkfinModel {
       eye.position.set(0.122 * s, 0.0, 0.272);
       eye.rotation.y = s * 0.4;
       this.head.add(eye);
-      // cuttlefish cheek markings in ink color
-      for (let k = 0; k < 3; k++) {
-        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), this.inkMat());
-        dot.position.set((0.17 + k * 0.035) * s, -0.115 - (k % 2) * 0.014, 0.24 - k * 0.04);
-        this.head.add(dot);
+      if (L.mark === 2) {
+        // freckle dots in ink color
+        for (let k = 0; k < 3; k++) {
+          const dot = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), this.inkMat());
+          dot.position.set((0.17 + k * 0.035) * s, -0.115 - (k % 2) * 0.014, 0.24 - k * 0.04);
+          this.head.add(dot);
+        }
+      } else if (L.mark === 1) {
+        // cheek fins: three slanted stripes per cheek
+        for (let k = 0; k < 3; k++) {
+          const a = s * (0.62 + k * 0.17);
+          const th = Math.PI / 2 + 0.28 + k * 0.03;
+          const n = new THREE.Vector3(Math.sin(a) * Math.sin(th), Math.cos(th), Math.cos(a) * Math.sin(th));
+          const st = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.07, 4, 8), new THREE.MeshStandardMaterial({ color: MARK_COLOR, roughness: 0.5 }));
+          st.position.copy(n).multiplyScalar(0.312).multiply(new THREE.Vector3(1, 0.93, 0.95));
+          st.lookAt(st.position.clone().add(n));
+          st.rotateX(Math.PI / 2);
+          st.rotateZ(s * 0.5);
+          st.scale.set(1, 1, 0.5);
+          this.head.add(st);
+        }
       }
+    }
+    if (L.mark === 0) {
+      // zebra band: a wavy dark band across the eyes, like cuttlefish stripes
+      const band = new THREE.Mesh(
+        faceBand(0.333, -1.35, 1.35, (a) => {
+          const taper = Math.cos((a / 1.35) * Math.PI * 0.5) ** 0.5;
+          const w = 0.25 * taper + 0.02;
+          // zig-zag stripe edges, like the bands on a real cuttlefish
+          const zig = (x: number) => (Math.abs(((x % 1) + 1) % 1 - 0.5) - 0.25) * 4;
+          const top = zig(a * 2.2) * 0.07 * taper;
+          const bot = zig(a * 2.2 + 0.5) * 0.06 * taper;
+          return [Math.PI / 2 - w + top, Math.PI / 2 + w * 0.8 + bot];
+        }),
+        new THREE.MeshStandardMaterial({ color: MARK_COLOR, roughness: 0.45, side: THREE.DoubleSide }),
+      );
+      band.scale.set(1, 0.93, 0.95);
+      band.position.y = 0.0;
+      this.head.add(band);
     }
     // smile
     const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.011, 6, 12, Math.PI), new THREE.MeshStandardMaterial({ color: '#4a1f1f' }));
@@ -281,6 +434,7 @@ export class InkfinModel {
     this.head.add(mouth);
 
     this.buildHair();
+    this.buildHeadgear();
     this.torso.add(this.head);
   }
 
@@ -325,6 +479,11 @@ export class InkfinModel {
         core.position.copy(seg.position);
         this.head.add(seg, core);
       }
+    } else if (style === 3) {
+      // Short Crop: just a tight little frill at the nape
+      const f1 = new THREE.Mesh(frillGeometry(0.3, 0.07, Math.PI * 0.5, Math.PI * 1.5, 10, 1.2), hair);
+      f1.position.y = 0.0;
+      this.head.add(f1);
     } else {
       // Twin Fins: two big frilled side fins like cuttlefish wings
       for (const s of [-1, 1]) {
@@ -345,6 +504,102 @@ export class InkfinModel {
       back.position.y = 0.08;
       this.head.add(back);
     }
+  }
+
+  private buildHeadgear() {
+    const item = gear(this.look.head);
+    if (item.style === 'none') return;
+    const main = glossy(item.color, { roughness: 0.5, clearcoat: 0.2 });
+    const acc = glossy(item.accent, { roughness: 0.4 });
+    const g = new THREE.Group();
+    const ring = (r: number, tube: number, mat: THREE.Material, y: number, tilt = -0.25) => {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(r, tube, 10, 36), mat);
+      m.rotation.x = Math.PI / 2 + tilt;
+      m.position.y = y;
+      g.add(m);
+      return m;
+    };
+    switch (item.style) {
+      case 'cap': {
+        const crown = new THREE.Mesh(new THREE.SphereGeometry(0.36, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.45), main);
+        crown.position.y = 0.05;
+        crown.rotation.x = -0.2;
+        const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.025, 24, 1, false, -Math.PI / 2, Math.PI), acc);
+        brim.scale.set(1.15, 1, 1.1);
+        brim.position.set(0, 0.18, 0.25);
+        brim.rotation.x = 0.15;
+        const button = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), acc);
+        button.position.set(0, 0.4, -0.06);
+        g.add(crown, brim, button);
+        break;
+      }
+      case 'beanie': {
+        const crown = new THREE.Mesh(new THREE.SphereGeometry(0.365, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.5), main);
+        crown.scale.set(1, 1.08, 1);
+        crown.rotation.x = -0.22;
+        const cuff = ring(0.345, 0.05, acc, 0.03, -0.22);
+        cuff.scale.set(1, 1, 1.4);
+        const pom = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), acc);
+        pom.position.set(0, 0.42, -0.08);
+        g.add(crown, pom);
+        break;
+      }
+      case 'headphones': {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.37, 0.03, 8, 30, Math.PI), main);
+        band.position.y = 0.02;
+        g.add(band);
+        for (const s of [-1, 1]) {
+          const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.08, 20), main);
+          cup.rotation.z = Math.PI / 2;
+          cup.position.set(0.34 * s, 0.0, 0);
+          const pad = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.025, 8, 20), acc);
+          pad.rotation.y = Math.PI / 2;
+          pad.position.set(0.39 * s, 0.0, 0);
+          g.add(cup, pad);
+        }
+        break;
+      }
+      case 'visor': {
+        ring(0.335, 0.03, main, 0.13, -0.2);
+        const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 24, 1, false, -Math.PI / 2, Math.PI), main);
+        brim.scale.set(1.1, 1, 1.1);
+        brim.position.set(0, 0.2, 0.26);
+        brim.rotation.x = 0.2;
+        g.add(brim);
+        break;
+      }
+      case 'bucket': {
+        const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.35, 0.22, 28), main);
+        crown.position.y = 0.3;
+        crown.rotation.x = -0.15;
+        const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.52, 0.02, 32), main);
+        brim.position.y = 0.19;
+        brim.rotation.x = -0.15;
+        const bandM = new THREE.Mesh(new THREE.CylinderGeometry(0.335, 0.345, 0.05, 28), acc);
+        bandM.position.y = 0.23;
+        bandM.rotation.x = -0.15;
+        g.add(crown, brim, bandM);
+        break;
+      }
+      case 'goggles': {
+        ring(0.34, 0.025, new THREE.MeshStandardMaterial({ color: '#2b2b33' }), 0.14, -0.25);
+        for (const s of [-1, 1]) {
+          const frame = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.07, 20), main);
+          frame.rotation.x = Math.PI / 2 - 0.5;
+          frame.position.set(0.1 * s, 0.24, 0.24);
+          const lens = new THREE.Mesh(new THREE.CircleGeometry(0.068, 20), new THREE.MeshPhysicalMaterial({ color: item.accent, roughness: 0.05, clearcoat: 1, transparent: true, opacity: 0.8 }));
+          lens.rotation.x = -0.5;
+          lens.position.set(0.1 * s, 0.258, 0.272);
+          g.add(frame, lens);
+        }
+        break;
+      }
+      case 'band':
+        ring(0.338, 0.04, main, 0.14, -0.22);
+        break;
+    }
+    g.traverse((o) => (o.castShadow = true));
+    this.head.add(g);
   }
 
   private buildFish() {

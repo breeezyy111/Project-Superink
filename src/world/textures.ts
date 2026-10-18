@@ -217,3 +217,177 @@ export function boxUVsWorld(geo: THREE.BoxGeometry, sx: number, sy: number, sz: 
   }
   uv.needsUpdate = true;
 }
+
+/** Corrugated shipping-container steel (one texture = 4m). */
+export function corrugated(base: string) {
+  return cached(`corr${base}`, () => {
+    const [c, ctx] = canvas(256, 256);
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 16) {
+      const g = ctx.createLinearGradient(x, 0, x + 16, 0);
+      g.addColorStop(0, 'rgba(255,255,255,0.18)');
+      g.addColorStop(0.5, 'rgba(0,0,0,0.05)');
+      g.addColorStop(1, 'rgba(0,0,0,0.22)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x, 0, 16, 256);
+    }
+    noise(ctx, 256, 256, 0.06, 3000);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(0, 0, 256, 6);
+    ctx.fillRect(0, 250, 256, 6);
+    return tex(c);
+  });
+}
+
+/** Weathered boardwalk planks (one texture = 4m). */
+export function planks(base = '#c99a63') {
+  return cached(`planks${base}`, () => {
+    const [c, ctx] = canvas(512, 512);
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, 512, 512);
+    for (let y = 0; y < 512; y += 64) {
+      ctx.fillStyle = `rgba(${Math.random() < 0.5 ? 0 : 255},${Math.random() < 0.5 ? 40 : 200},0,${0.04 + Math.random() * 0.05})`;
+      ctx.fillRect(0, y, 512, 64);
+      ctx.fillStyle = 'rgba(60,35,15,0.55)';
+      ctx.fillRect(0, y, 512, 4);
+      const off = Math.random() * 512;
+      ctx.fillRect(off, y, 4, 64);
+      // grain
+      ctx.strokeStyle = 'rgba(80,50,20,0.15)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 5; i++) {
+        ctx.beginPath();
+        const yy = y + 10 + Math.random() * 46;
+        ctx.moveTo(0, yy);
+        ctx.bezierCurveTo(170, yy + 6, 340, yy - 6, 512, yy);
+        ctx.stroke();
+      }
+      for (const x of [off - 12, off + 12]) {
+        ctx.fillStyle = 'rgba(40,30,20,0.6)';
+        ctx.beginPath(); ctx.arc(x, y + 16, 3, 0, Math.PI * 2); ctx.arc(x, y + 48, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    noise(ctx, 512, 512, 0.05, 6000);
+    return tex(c);
+  });
+}
+
+/** Painted brick (one texture = 4m). */
+export function brick(base = '#c8664a', mortar = '#e8d8c4') {
+  return cached(`brick${base}`, () => {
+    const [c, ctx] = canvas(512, 512);
+    ctx.fillStyle = mortar;
+    ctx.fillRect(0, 0, 512, 512);
+    for (let row = 0; row < 16; row++) {
+      const off = (row % 2) * 32;
+      for (let x = -64; x < 512; x += 64) {
+        const k = Math.random() * 0.12 - 0.06;
+        ctx.fillStyle = base;
+        ctx.fillRect(x + off + 3, row * 32 + 3, 58, 26);
+        ctx.fillStyle = `rgba(${k > 0 ? 255 : 0},${k > 0 ? 255 : 0},${k > 0 ? 255 : 0},${Math.abs(k)})`;
+        ctx.fillRect(x + off + 3, row * 32 + 3, 58, 26);
+      }
+    }
+    noise(ctx, 512, 512, 0.06, 6000);
+    return tex(c);
+  });
+}
+
+/** Rooftop sports court: colored base with painted lines (one texture = whole court, not tiled). */
+export function courtFloor(base = '#3b7dd8', key = '#e8743b') {
+  return cached(`court${base}`, () => {
+    const [c, ctx] = canvas(1024, 1024);
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, 1024, 1024);
+    noise(ctx, 1024, 1024, 0.04, 12000);
+    ctx.fillStyle = key;
+    ctx.fillRect(380, 0, 264, 230);
+    ctx.fillRect(380, 794, 264, 230);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(40, 40, 944, 944);
+    ctx.beginPath(); ctx.moveTo(40, 512); ctx.lineTo(984, 512); ctx.stroke();
+    ctx.beginPath(); ctx.arc(512, 512, 120, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(512, 40, 360, 0, Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.arc(512, 984, 360, Math.PI, Math.PI * 2); ctx.stroke();
+    const t = tex(c);
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    return t;
+  });
+}
+
+/** Polished plaza tiles with a diamond accent (one texture = 4m). */
+export function plazaTiles(base = '#e9e1d3', accent = '#d77a61') {
+  return cached(`plaza${base}${accent}`, () => {
+    const [c, ctx] = canvas(512, 512);
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, 512, 512);
+    noise(ctx, 512, 512, 0.04, 6000);
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 3;
+    for (let i = 0; i <= 4; i++) {
+      ctx.beginPath(); ctx.moveTo(i * 128, 0); ctx.lineTo(i * 128, 512); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * 128); ctx.lineTo(512, i * 128); ctx.stroke();
+    }
+    ctx.fillStyle = accent;
+    for (const [x, y] of [[128, 128], [384, 384], [128, 384], [384, 128]]) {
+      ctx.beginPath(); ctx.moveTo(x, y - 22); ctx.lineTo(x + 22, y); ctx.lineTo(x, y + 22); ctx.lineTo(x - 22, y); ctx.fill();
+    }
+    return tex(c);
+  });
+}
+
+/** Store / building sign with bubbly text. */
+export function signTexture(text: string, bg: string, fg: string, w = 1024, h = 256) {
+  return cached(`sign${text}${bg}`, () => {
+    const [c, ctx] = canvas(w, h);
+    ctx.fillStyle = bg;
+    const r = h * 0.3;
+    ctx.beginPath();
+    ctx.roundRect(8, 8, w - 16, h - 16, r);
+    ctx.fill();
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = '#15121c';
+    ctx.stroke();
+    let size = h * 0.55;
+    ctx.font = `900 ${size}px "Titan One", "Arial Black", sans-serif`;
+    while (ctx.measureText(text).width > w * 0.86 && size > 20) {
+      size -= 4;
+      ctx.font = `900 ${size}px "Titan One", "Arial Black", sans-serif`;
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = size * 0.22;
+    ctx.strokeStyle = '#15121c';
+    ctx.strokeText(text, w / 2, h / 2 + size * 0.05);
+    ctx.fillStyle = fg;
+    ctx.fillText(text, w / 2, h / 2 + size * 0.05);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  });
+}
+
+/** Cartoon water surface (tiles). */
+export function waterTexture() {
+  return cached('water', () => {
+    const [c, ctx] = canvas(256, 256);
+    ctx.fillStyle = '#2aa7d8';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 18; i++) {
+      const x = Math.random() * 256, y = Math.random() * 256;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + 10, y - 6, x + 20, y);
+      ctx.quadraticCurveTo(x + 30, y + 6, x + 40, y);
+      ctx.stroke();
+    }
+    return tex(c);
+  });
+}

@@ -18,8 +18,11 @@ export class Physics {
   world!: RAPIER.World;
   private colliderInfo = new Map<number, { parent: THREE.Object3D; inkable: boolean }>();
 
+  private static ready: Promise<void> | null = null;
+
   static async create() {
-    await RAPIER.init();
+    if (!Physics.ready) Physics.ready = RAPIER.init();
+    await Physics.ready;
     const p = new Physics();
     p.world = new RAPIER.World({ x: 0, y: 0, z: 0 });
     return p;
@@ -48,6 +51,11 @@ export class Physics {
   createCharacterCollider(radius: number, halfHeight: number) {
     const desc = RAPIER.ColliderDesc.capsule(halfHeight, radius).setCollisionGroups(groups(COLL_GROUP_CHAR, COLL_GROUP_MAP));
     return this.world.createCollider(desc);
+  }
+
+  dispose() {
+    this.world.free();
+    this.colliderInfo.clear();
   }
 
   step() {

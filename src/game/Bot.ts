@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { MapInfo } from '../world/SkateparkMap';
+import type { StageInfo as MapInfo } from '../world/Stage';
+import { SUBS } from './items';
 import type { Character } from './Character';
 import type { GameCtx } from './types';
 
@@ -26,6 +27,25 @@ export class Bot {
   private jumpT = 0;
 
   constructor(readonly ch: Character, private ctx: GameCtx, private map: MapInfo, readonly skill = 0.6) {}
+
+  private subT = 2;
+  private specialDelay = 1;
+
+  idle() {
+    const inp = this.ch.input;
+    inp.fire = false;
+    inp.sub = false;
+    inp.special = false;
+    inp.swim = false;
+    inp.move.set(0, 0);
+  }
+
+  /** Is there floor ahead in this direction (don't walk off ledges into the abyss)? */
+  private groundAhead(dir: THREE.Vector3) {
+    const p = this.ch.pos.clone().addScaledVector(dir, 1.4).setY(this.ch.pos.y + 0.8);
+    const hit = this.ctx.physics.raycast(p, new THREE.Vector3(0, -1, 0), 4.5);
+    return !!hit && hit.point.y > this.map.killY + 1;
+  }
 
   reset() {
     this.retargetT = 0;
@@ -88,11 +108,12 @@ export class Bot {
     const ch = this.ch;
     const inp = ch.input;
     if (!ch.alive) {
-      inp.fire = false;
-      inp.swim = false;
-      inp.move.set(0, 0);
+      this.idle();
       return;
     }
+    inp.sub = false;
+    inp.special = false;
+    this.subT -= dt;
     this.retargetT -= dt;
     this.thinkT -= dt;
     this.strafeT -= dt;
@@ -187,6 +208,41 @@ export class Bot {
         // in own ink and far from the target? swim there fast
         const far = ch.pos.distanceTo(this.target) > 8;
         if (far && ch.standing === 'own' && ch.weapon.kind !== 'roller' && Math.random() < 0.02) wantSwim = true;
+      }
+    }
+
+    // subs: lob at enemies in mid range, or drop a mine where we stand
+    const sub = ch.kitState.kit.sub;
+    const cost = SUBS[sub].cost;
+    if (this.subT <= 0 && ch.ink > cost + 15 && !this.refilling) {
+      const d = this.enemy ? this.enemy.pos.distanceTo(ch.pos) : 99;
+      if (sub === 'mine' ? Math.random() < 0.3 : this.enemy && d > 5 && d < 15 && this.reaction <= 0) {
+        inp.sub = true;
+        wantFire = false;
+        this.subT = 4 + Math.random() * 5 - this.skill * 2;
+      } else this.subT = 0.7;
+    }
+    // specials: fire them when it counts (or soon after they fill)
+    if (ch.special >= 100) {
+      this.specialDelay -= dt;
+      const sp = ch.kitState.kit.special;
+      const near = this.enemy && this.enemy.pos.distanceTo(ch.pos) < (sp === 'jet' ? 25 : 14);
+      if (near || this.specialDelay < -6) {
+        inp.special = true;
+        this.specialDelay = 1 + Math.random() * 2;
+      }
+    }
+    if (ch.jetT > 0 && this.enemy) {
+      wantFire = true;
+      aim.copy(this.enemy.pos).add(this.aimErr);
+    }
+
+    // don't walk off ledges / into water
+    if (toMove.lengthSq() > 0.01 && !ch.climbing) {
+      const dir = toMove.clone().setY(0).normalize();
+      if (!this.groundAhead(dir)) {
+        toMove.set(0, 0, 0);
+        this.retargetT = 0;
       }
     }
 

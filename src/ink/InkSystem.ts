@@ -222,8 +222,10 @@ export class InkSystem {
     return out;
   }
 
-  /** Paint a set of world-space circles for a team onto every face they touch. */
-  paint(circles: SplatCircle[], team: Team) {
+  /** Paint a set of world-space circles for a team onto every face they touch.
+   *  Returns how many ownership cells flipped to this team (for special charge + rewards). */
+  paint(circles: SplatCircle[], team: Team): number {
+    let gained = 0;
     // bounding sphere of the whole splat for quick rejection
     let maxR = 0;
     const c0 = circles[0];
@@ -252,7 +254,7 @@ export class InkSystem {
         const u = tmp.dot(f.wU);
         const v = tmp.dot(f.wV);
         if (u < -r || v < -r || u > f.w + r || v > f.h + r) continue;
-        this.paintFace(f, u, v, r, color, tval);
+        gained += this.paintFace(f, u, v, r, color, tval);
         touched = true;
       }
       if (touched) {
@@ -260,9 +262,11 @@ export class InkSystem {
         f.mesh.visible = true;
       }
     }
+    return gained;
   }
 
-  private paintFace(f: InkFace, u: number, v: number, r: number, color: string, tval: number) {
+  private paintFace(f: InkFace, u: number, v: number, r: number, color: string, tval: number): number {
+    let gained = 0;
     const px = (u / f.w) * f.W;
     const py = (1 - v / f.h) * f.H;
     const pr = r * INK_TEXELS_PER_METER;
@@ -306,12 +310,14 @@ export class InkSystem {
         const prev = f.owner[idx];
         if (prev === tval) continue;
         f.owner[idx] = tval;
+        gained++;
         if (f.isFloor) {
           if (prev) this.counts[prev - 1]--;
           this.counts[tval - 1]++;
         }
       }
     }
+    return gained;
   }
 
   /** Ownership at a world point on one of the faces belonging to `parent`. */

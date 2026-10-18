@@ -3,12 +3,16 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { HEALTH, INK_TANK, PHYS, Team } from '../config';
 import { MAP_ONLY } from '../world/Physics';
 import { InkfinModel, Look } from './InkfinModel';
-import { buildWeaponModel, WeaponKind, WeaponState } from './weapons';
+import type { Kit } from './items';
+import { KitState } from './kit';
+import { buildWeaponModel, WeaponState } from './weapons';
 import type { GameCtx } from './types';
 
 export interface CharInput {
   move: THREE.Vector2; // world-space x/z desired direction, length 0..1
   fire: boolean;
+  sub: boolean;
+  special: boolean;
   swim: boolean;
   jump: boolean;
   aimPoint: THREE.Vector3; // world point to shoot toward
@@ -40,10 +44,20 @@ export class Character {
   paintedApprox = 0;
   lastAttacker: Character | null = null;
   input: CharInput = {
-    move: new THREE.Vector2(), fire: false, swim: false, jump: false,
+    move: new THREE.Vector2(), fire: false, swim: false, jump: false, sub: false, special: false,
     aimPoint: new THREE.Vector3(), aimYaw: 0, aimPitch: 0,
   };
   weapon: WeaponState;
+  kitState: KitState;
+  /** special gauge 0..100, filled by painting */
+  special = 0;
+  /** >0 while a special is running */
+  specialT = 0;
+  /** >0 while flying on Turbo Jet */
+  jetT = 0;
+  private jetBaseY = 0;
+  /** ownership cells this character painted this match */
+  painted = 0;
   model: InkfinModel;
   collider: RAPIER.Collider;
   private controller: RAPIER.KinematicCharacterController;
@@ -56,13 +70,14 @@ export class Character {
     readonly team: Team,
     readonly isPlayer: boolean,
     look: Look,
-    weaponKind: WeaponKind,
+    readonly kit: Kit,
     private ctx: GameCtx,
     scene: THREE.Scene,
   ) {
-    this.weapon = new WeaponState(weaponKind);
-    this.model = new InkfinModel(look, ctx.colorOf(team), weaponKind);
-    const wm = buildWeaponModel(weaponKind, this.model.inkMats[0]);
+    this.weapon = new WeaponState(kit.main);
+    this.kitState = new KitState(kit);
+    this.model = new InkfinModel(look, ctx.colorOf(team), kit.main);
+    const wm = buildWeaponModel(kit.main, this.model.inkMats[0]);
     this.model.setWeaponModel(wm.model, wm.drum);
     scene.add(this.model.root);
 
@@ -91,9 +106,18 @@ export class Character {
     this.ink = INK_TANK.max;
     this.alive = true;
     this.swimming = false;
+    this.jetT = 0;
+    this.specialT = 0;
     this.weapon.reset();
     this.model.root.visible = true;
     this.syncCollider();
+  }
+
+  startJet() {
+    const g = this.ctx.physics.raycast(this.pos.clone().setY(this.pos.y + 0.5), DOWN, 30);
+    this.jetBaseY = g ? g.point.y : this.pos.y;
+    this.jetT = 7;
+    this.swimming = false;
   }
 
   chestPoint(out: THREE.Vector3) {
@@ -149,7 +173,10 @@ export class Character {
     this.standing = this.probe(tmp.copy(this.pos).setY(this.pos.y + 0.3), DOWN, 0.55);
 
     // swim / kid form
-    const wantSwim = inp.swim;
+    const jetting = this.jetT > 0;
+    if (jetting) this.jetT -= dt;
+    if (this.specialT > 0) this.specialT -= dt;
+    const wantSwim = inp.swim && !jetting;
     if (wantSwim !== this.wasSwimming) {
       this.model.pop();
       if (wantSwim && this.standing === 'own') {
@@ -182,15 +209,22 @@ export class Character {
       if (this.standing === 'enemy') speed = PHYS.walkSpeedEnemyInk;
       speed *= this.weapon.speedMul(this);
     }
+    if (jetting) speed = 5.5;
 
     const target = tmp.set(mv.x * speed, 0, mv.y * speed);
-    const accel = this.grounded || this.climbing ? (this.swimming ? 55 : 45) : 12;
+    const accel = jetting ? 30 : this.grounded || this.climbing ? (this.swimming ? 55 : 45) : 12;
     const k = Math.min(1, accel * dt / Math.max(1, speed));
     this.vel.x += (target.x - this.vel.x) * k;
     this.vel.z += (target.z - this.vel.z) * k;
 
     // vertical
-    if (this.climbing) {
+    if (jetting) {
+      // hover high above the ground the jet started from
+      const target = this.jetBaseY + 6;
+      this.vel.y = THREE.MathUtils.clamp((target - this.pos.y) * 3, -6, 8);
+      this.grounded = false;
+      if (Math.random() < 0.7) this.ctx.effects.burst(this.pos.clone(), DOWN, this.ctx.colorOf(this.team), 2, 6, 0.09);
+    } else if (this.climbing) {
       this.vel.y = inp.jump ? PHYS.climbSpeed * 1.4 : PHYS.climbSpeed;
       this.wasClimbing = true;
     } else {
@@ -236,7 +270,8 @@ export class Character {
     }
 
     // weapon
-    this.weapon.update(dt, this, this.ctx);
+    if (!jetting) this.weapon.update(dt, this, this.ctx);
+    this.kitState.update(dt, this, this.ctx);
 
     // ink tank
     if (this.submerged) this.ink += INK_TANK.refillSwim * dt;
@@ -308,6 +343,9 @@ export class Character {
 
   die(respawnSeconds: number) {
     this.alive = false;
+    this.special *= 0.5;
+    this.jetT = 0;
+    this.specialT = 0;
     this.deaths++;
     this.respawnT = respawnSeconds;
     this.model.root.visible = false;
