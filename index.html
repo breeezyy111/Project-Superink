@@ -20,9 +20,65 @@
         <div class="title-foot">Inkfins • Splashburg</div>
       </section>
 
+      <!-- Sign in / sign up (optional, recommended) -->
+      <section id="auth" class="screen hidden">
+        <div class="auth-wrap">
+          <div class="auth-card">
+            <div class="auth-blob a1"></div><div class="auth-blob a2"></div>
+            <div class="tag tilt">SPLASHBURG ID</div>
+            <h2 id="auth-title" class="auth-title">Welcome back, Inkfin!</h2>
+            <div class="auth-tabs">
+              <button id="tab-signin" class="auth-tab sel">SIGN IN</button>
+              <button id="tab-signup" class="auth-tab">SIGN UP</button>
+            </div>
+            <form id="form-signin" class="auth-form" autocomplete="on">
+              <label class="ink-field"><span>Username or email</span><input id="si-user" name="username" autocomplete="username" required /></label>
+              <label class="ink-field"><span>Password</span><input id="si-pass" type="password" name="password" autocomplete="current-password" required /></label>
+              <button type="submit" class="blob-btn">SIGN IN</button>
+              <button type="button" id="btn-forgot" class="link-btn">Forgot your password?</button>
+            </form>
+            <form id="form-signup" class="auth-form hidden" autocomplete="on">
+              <label class="ink-field"><span>Username <i>(this is your Inkfin name)</i></span><input id="su-user" name="username" autocomplete="username" minlength="3" maxlength="20" pattern="[A-Za-z0-9]{3,20}" required /></label>
+              <label class="ink-field"><span>Email</span><input id="su-email" type="email" name="email" autocomplete="email" required /></label>
+              <label class="ink-field"><span>Password</span><input id="su-pass" type="password" name="new-password" autocomplete="new-password" minlength="6" maxlength="100" required /></label>
+              <label class="ink-field"><span>Confirm password</span><input id="su-pass2" type="password" autocomplete="new-password" minlength="6" maxlength="100" required /></label>
+              <div id="su-upgrade" class="auth-note hidden">You're playing as <b id="su-guest"></b>. Signing up keeps all your coins, gear and level!</div>
+              <button type="submit" class="blob-btn">SIGN UP</button>
+            </form>
+            <div id="auth-msg" class="auth-msg hidden"></div>
+          </div>
+          <div class="auth-side">
+            <div class="auth-why">
+              <div class="why-title">Why sign up?</div>
+              <ul>
+                <li>Keep your fresh look, gear and coins on any device</li>
+                <li>Pick your own Inkfin name</li>
+                <li>Never lose your level</li>
+              </ul>
+            </div>
+            <button id="btn-guest" class="blob-btn alt">PLAY AS GUEST</button>
+            <div id="guest-note" class="guest-note">You'll be named <b>Guest0</b>-something. You can sign up later from the plaza!</div>
+            <button id="btn-auth-back" class="link-btn">Back</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Account panel (click your profile in the plaza) -->
+      <section id="account" class="screen dim hidden">
+        <div class="panel small">
+          <div class="tag tilt">ACCOUNT</div>
+          <div class="acct-row"><span>Name</span><b id="acct-name">-</b></div>
+          <div class="acct-row"><span>Status</span><b id="acct-status">-</b></div>
+          <div class="acct-row" id="acct-email-row"><span>Email</span><b id="acct-email">-</b></div>
+          <button id="btn-acct-signup" class="blob-btn">SIGN UP / SIGN IN</button>
+          <button id="btn-acct-signout" class="blob-btn alt">SIGN OUT</button>
+          <button id="btn-acct-close" class="link-btn">Close</button>
+        </div>
+      </section>
+
       <!-- Hub HUD -->
       <section id="hub-hud" class="hidden">
-        <div class="profile-chip">
+        <div id="profile-chip" class="profile-chip" title="Account">
           <div class="lv">Lv <b id="pc-level">1</b></div>
           <div class="pc-body">
             <div id="pc-name" class="pc-name">Player</div>
@@ -123,6 +179,7 @@
       </section>
 
       <div id="now-playing" class="now-playing hidden"></div>
+      <div id="toast" class="toast hidden"></div>
       <div id="loading" class="screen"><div class="loader">Mixing ink...</div></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

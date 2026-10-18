@@ -12,6 +12,18 @@ npm run dev        # opens on http://localhost:5173
 npm run build      # type-check + production build into dist/
 ```
 
+## Accounts (PlayFab)
+
+When you press PLAY, an optional (but recommended) **Splashburg ID** page lets you sign in or sign up, or **Play as Guest**.
+
+- Guests get a PlayFab account tied to their browser, named `Guest0` + their number: `Guest01`, `Guest02`, ... `Guest010`, ...
+- Signing up as a guest upgrades the same account, so you keep your coins, gear and level.
+- Sign in with your username or email on any device. Progress is saved to your PlayFab account, and the game remembers you until you sign out.
+- Click your profile in the top-left of the plaza to sign up, sign in or sign out.
+
+To turn it on, follow [`playfab/SETUP.md`](playfab/SETUP.md): put your Title ID in `.env` and upload `playfab/cloudscript.js`.
+Without a Title ID, the game still runs and saves progress in the browser only.
+
 ## Controls (mouse + keyboard)
 
 | Action | Input |
@@ -86,6 +98,10 @@ src/
   ui/                  HUD, shop screens, 3D try-on turntable
   audio/Sfx.ts         synthesized sound effects
   audio/Music.ts       procedural band music
+  online/PlayFab.ts    PlayFab Client API over REST
+  online/Account.ts    guest / sign up / sign in / remember me / cloud save
+  ui/AuthUI.ts         Splashburg ID page + account panel
+playfab/               CloudScript (guest names) and setup guide
 ```
 
 ### Dev URL flags

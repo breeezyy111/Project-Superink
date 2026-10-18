@@ -15,6 +15,8 @@ export interface ShopDeps {
   preview: LockerStage;
   save(): void;
   onLookChanged(): void;
+  /** change the in-game name; null when names are locked (guests) */
+  rename: ((name: string) => Promise<string>) | null;
   onClose(): void;
   onBattle(): void;
 }
@@ -236,13 +238,35 @@ export class ShopUI {
     };
     const name = document.createElement('input');
     name.value = p.name;
-    name.maxLength = 12;
-    name.oninput = () => {
-      p.name = name.value.trim().slice(0, 12) || 'Player';
-      this.d.save();
-      this.d.onLookChanged();
-    };
-    field('Name', name);
+    name.maxLength = 20;
+    const rename = this.d.rename;
+    if (!rename) {
+      // guests keep their Guest0N name; signing up lets them choose one
+      name.disabled = true;
+      field('Name <i style="text-transform:none;opacity:.7">(sign up to choose your own)</i>', name);
+    } else {
+      name.onchange = async () => {
+        const wanted = name.value.trim().slice(0, 20);
+        if (wanted.length < 3 || wanted === p.name) {
+          name.value = p.name;
+          return;
+        }
+        try {
+          p.name = await rename(wanted);
+          name.value = p.name;
+          this.d.save();
+          this.d.onLookChanged();
+          this.d.sfx.coin();
+        } catch (e) {
+          name.value = p.name;
+          this.d.sfx.denied();
+          name.setCustomValidity((e as Error).message);
+          name.reportValidity();
+          setTimeout(() => name.setCustomValidity(''), 2500);
+        }
+      };
+      field('Name', name);
+    }
     const swatches = (list: string[], get: () => string, set: (c: string) => void) => {
       const el = document.createElement('div');
       el.className = 'swatches';

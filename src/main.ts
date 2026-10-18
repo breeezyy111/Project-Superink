@@ -10,10 +10,12 @@ import { Hub, HUB_DEF, ZONES } from './game/Hub';
 import { kit } from './game/items';
 import { Match, MatchSummary } from './game/Match';
 import { PlayerController } from './game/PlayerController';
-import { addXp, loadProfile, saveProfile, xpToNext } from './game/profile';
+import { addXp, defaultProfile, loadProfile, Profile, saveProfile, xpToNext } from './game/profile';
 import { WEAPONS } from './game/weapons';
 import { CUTTLE_SVG, Hud } from './ui/Hud';
 import { LockerStage } from './ui/LockerStage';
+import { Account, friendlyError } from './online/Account';
+import { AccountPanel, AuthUI, toast } from './ui/AuthUI';
 import { ShopUI } from './ui/Shops';
 import { Stage, StageDef } from './world/Stage';
 import { stageById, STAGES } from './world/stages';
@@ -37,7 +39,25 @@ async function boot() {
   const hud = new Hud();
   const controller = new PlayerController(r.renderer.domElement);
   const profile = loadProfile();
-  const save = () => saveProfile(profile);
+  const account = new Account();
+  const save = () => {
+    saveProfile(profile);
+    account.queueSync(profile);
+  };
+  /** Bring in the cloud copy of your progress after signing in (or upload this one if there is none). */
+  const adoptRemote = (remote: Profile | null) => {
+    if (remote) {
+      const def = defaultProfile();
+      Object.assign(profile, def, remote, { look: { ...def.look, ...remote.look } });
+      for (const id of def.owned) if (!profile.owned.includes(id)) profile.owned.push(id);
+    }
+    if (account.online && account.displayName) profile.name = account.displayName;
+    save();
+    sfx.volume = profile.volume;
+    music.volume = profile.music;
+    controller.sensitivity = profile.sens / 1000;
+    controller.invertY = profile.invert;
+  };
   sfx.volume = profile.volume;
   music.volume = profile.music;
   controller.sensitivity = profile.sens / 1000;
@@ -129,14 +149,60 @@ async function boot() {
     newMatch(st, true);
     loading(false);
   };
-  $('btn-start').addEventListener('click', () => {
+  const auth = new AuthUI({
+    account,
+    sfx,
+    onDone: (remote) => {
+      adoptRemote(remote);
+      goHub(true);
+    },
+    onBack: () => {
+      if (screen === 'hub') controller.requestLock();
+      else show('title', true);
+    },
+  });
+  $('btn-start').addEventListener('click', async () => {
     unlockAudio();
     sfx.ui();
-    goHub(true);
+    if (busy) return;
+    // returning players are signed straight back in; everyone else sees the (optional) sign-in page
+    if (account.online) return goHub(true);
+    if (account.hasSavedSession && account.configured) {
+      busy = true;
+      loading(true);
+      try {
+        const remote = await account.resume();
+        busy = false;
+        if (account.online) {
+          adoptRemote(remote);
+          toast(`Welcome back, ${account.displayName}!`);
+          return goHub(true);
+        }
+      } catch (e) {
+        busy = false;
+        toast(friendlyError(e), true);
+      }
+      loading(false);
+    }
+    show('title', false);
+    auth.show();
   });
   $('btn-start').insertAdjacentHTML('afterbegin', `<span style="display:inline-block;width:40px;height:40px;vertical-align:-6px;margin-right:10px">${CUTTLE_SVG('#ff2fa8')}</span>`);
 
   // ---------- hub ----------
+  const accountPanel = new AccountPanel(account, auth, sfx, () => {
+    // signed out: back to the title, local progress stays in this browser
+    profile.name = 'Player';
+    saveProfile(profile);
+    teardown();
+    goTitle();
+  }, () => controller.requestLock());
+  $('profile-chip').addEventListener('click', () => {
+    if (screen !== 'hub' || shop.open) return;
+    controller.releaseLock();
+    accountPanel.show();
+  });
+
   const updateProfileChip = () => {
     $('pc-level').textContent = String(profile.level);
     $('pc-name').textContent = profile.name;
@@ -167,6 +233,17 @@ async function boot() {
     sfx,
     preview,
     save,
+    get rename() {
+      if (account.mode === 'guest') return null;
+      return async (name: string) => {
+        if (!/^[A-Za-z0-9 _-]{3,20}$/.test(name)) throw new Error('Names are 3–20 letters, numbers, spaces, - or _.');
+        try {
+          return account.online ? await account.rename(name) : name;
+        } catch (e) {
+          throw new Error(friendlyError(e));
+        }
+      };
+    },
     onLookChanged: () => {
       lookDirty = true;
       updateProfileChip();
@@ -330,10 +407,12 @@ async function boot() {
     requestAnimationFrame(tick);
     timer.update();
     const dt = Math.min(timer.getDelta(), 1 / 20);
-    controller.allowLock = (screen === 'match' && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open);
+    controller.allowLock = (screen === 'match' && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open);
 
     if (screen === 'hub' && hub) {
-      if (!shop.open && hub.nearZone && controller.consume('KeyE')) {
+      const overlay = auth.open || accountPanel.open;
+      if (overlay) controller.consume('KeyE');
+      if (!overlay && !shop.open && hub.nearZone && controller.consume('KeyE')) {
         hub.inShop = true;
         controller.releaseLock();
         show('hub-hud', false);
@@ -345,7 +424,7 @@ async function boot() {
       const z = hub.nearZone;
       show('hub-prompt', !!z && !shop.open);
       if (z) $('hub-prompt-text').textContent = z.id === 'tower' ? 'Enter Turf Tower (Battle!)' : `Enter ${z.name}`;
-      show('hub-lock', !controller.locked && !shop.open);
+      show('hub-lock', !controller.locked && !shop.open && !overlay);
       if (shop.open) {
         preview.update(dt);
         r.renderer.render(preview.scene, preview.camera);
@@ -380,7 +459,7 @@ async function boot() {
     get match() { return match; },
     get hub() { return hub; },
     get screen() { return screen; },
-    r, preview, profile, shop, controller, music, zones: ZONES,
+    r, preview, profile, save, shop, controller, music, account, auth, zones: ZONES,
     goHub, startMatch,
     step(n = 60, dt = 1 / 60) {
       for (let i = 0; i < n; i++) {
