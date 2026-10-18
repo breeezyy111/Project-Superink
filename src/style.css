@@ -254,7 +254,7 @@ html, body {
   .ticon svg { width: 22px; height: 22px; }
 }
 
-/* ---------- v0.2: hub, shops, kit HUD, rewards ---------- */
+/* ---------- hub, shops, kit HUD, rewards ---------- */
 kbd {
   font-family: var(--display); font-size: 0.85em; background: var(--paper); color: var(--dark);
   padding: 1px 7px 0; border-radius: 6px; box-shadow: 0 2px 0 rgba(0,0,0,0.45);
