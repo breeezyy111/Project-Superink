@@ -103,6 +103,11 @@ export class PlayFabClient {
     return this.call('UnlinkCustomID', { CustomId: customId });
   }
 
+  /** Look an account up by display name (throws AccountNotFound if nobody has it). */
+  findByDisplayName(name: string) {
+    return this.call<{ AccountInfo: { PlayFabId: string } }>('GetAccountInfo', { TitleDisplayName: name });
+  }
+
   setDisplayName(name: string) {
     return this.call<{ DisplayName: string }>('UpdateUserTitleDisplayName', { DisplayName: name });
   }

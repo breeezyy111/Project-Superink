@@ -11,6 +11,11 @@ export type AccountMode = 'guest' | 'account' | 'offline';
 
 const KEY_DEVICE = 'superink.deviceId';
 const KEY_SESSION = 'superink.session';
+const KEY_GUEST_HINT = 'superink.guestHint';
+
+/** Guest names are always "Guest0" + the guest's number: Guest01, Guest02, ... Guest010, ... */
+const guestName = (n: number) => `Guest0${n}`;
+const guestNumber = (name: string) => parseInt(name.replace(/^Guest0/, ''), 10) || 0;
 
 interface SavedSession {
   mode: 'guest' | 'account';
@@ -131,25 +136,87 @@ export class Account {
     return remote;
   }
 
-  /** Ask the title's CloudScript for the next free Guest0N name, then claim it as our display name. */
+  /**
+   * Give a new guest the next GuestNN name (Guest01, Guest02, ...).
+   * Uses the title's CloudScript counter if one is deployed; otherwise finds the next free
+   * number itself by looking names up (works with zero server setup).
+   */
   private async assignGuestName() {
-    for (let attempt = 0; attempt < 5; attempt++) {
+    let useScript = true;
+    let from = 1;
+    for (let attempt = 0; attempt < 6; attempt++) {
       try {
-        const res = await this.pf.cloudScript<{ name: string }>('assignGuestName', { retry: attempt > 0 });
-        if (!res?.name) throw new PlayFabError('NoName', 'CloudScript returned no name');
-        await this.pf.setDisplayName(res.name);
-        this.displayName = res.name;
+        let name: string;
+        if (useScript) {
+          try {
+            const res = await this.pf.cloudScript<{ name: string }>('assignGuestName', { retry: attempt > 0 });
+            if (!res?.name) throw new PlayFabError('NoName', 'CloudScript returned no name');
+            name = res.name;
+          } catch (e) {
+            if (e instanceof PlayFabError && e.code === 'Network') throw e;
+            // no CloudScript on this title (or it failed): fall back to finding the number ourselves
+            useScript = false;
+            name = guestName(await this.nextFreeGuestNumber(from));
+          }
+        } else {
+          name = guestName(await this.nextFreeGuestNumber(from));
+        }
+        await this.pf.setDisplayName(name);
+        this.displayName = name;
         this.guestNamePending = false;
+        store(KEY_GUEST_HINT, String(guestNumber(name)));
         return;
       } catch (e) {
-        // someone grabbed the same number at the same moment: ask for the next one
-        if (e instanceof PlayFabError && e.code === 'NameNotAvailable') continue;
+        // someone grabbed the same number at the same moment: take the next one
+        if (e instanceof PlayFabError && e.code === 'NameNotAvailable') {
+          from = Math.max(from, (parseInt(read(KEY_GUEST_HINT) ?? '0', 10) || 0)) + 1;
+          continue;
+        }
         console.warn('[SuperInk] Could not assign a guest name:', e);
         break;
       }
     }
     this.guestNamePending = true;
     if (!this.displayName) this.displayName = 'Guest';
+  }
+
+  /** Is GuestNN already somebody's display name? */
+  private async guestTaken(n: number) {
+    try {
+      await this.pf.findByDisplayName(guestName(n));
+      return true;
+    } catch (e) {
+      if (e instanceof PlayFabError && e.code === 'AccountNotFound') return false;
+      throw e;
+    }
+  }
+
+  /**
+   * Smallest free guest number at or after the taken prefix, found with a doubling search then a
+   * binary search, so the 1,000th guest needs about 20 lookups instead of 1,000.
+   */
+  private async nextFreeGuestNumber(from = 1) {
+    const hint = Math.max(from, parseInt(read(KEY_GUEST_HINT) ?? '1', 10) || 1);
+    let lo = from - 1; // known taken (0 = "none")
+    let hi: number; // known free
+    if (!(await this.guestTaken(hint))) {
+      hi = hint;
+    } else {
+      lo = hint;
+      let step = Math.max(1, hint);
+      hi = hint + step;
+      while (await this.guestTaken(hi)) {
+        lo = hi;
+        step *= 2;
+        hi = lo + step;
+      }
+    }
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (await this.guestTaken(mid)) lo = mid;
+      else hi = mid;
+    }
+    return hi;
   }
 
   async signIn(nameOrEmail: string, password: string): Promise<Profile | null> {

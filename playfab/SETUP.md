@@ -5,11 +5,13 @@ SuperInk uses PlayFab for optional accounts. If PlayFab can't be reached, the ga
 1. **Title ID**: SuperInk's title is **`90E97`**, built into `src/online/PlayFab.ts`.
    To point at a different (e.g. test) title, copy `.env.example` to `.env`, set `VITE_PLAYFAB_TITLE_ID=XXXXX`, and restart `npm run dev`.
    The Title ID is public. Never put the **Developer Secret Key** in the game or the repo.
-3. **Upload the CloudScript** in `playfab/cloudscript.js`: Game Manager > Automation > CloudScript >
-   Revisions (Legacy) > Upload new revision, then tick **Deploy**. This gives guests their
-   `Guest01`, `Guest02`, ... names.
-4. **Check API settings**: Title settings > API Features. "Allow client to execute CloudScript" must be on.
-   It's on by default.
+3. **Nothing else is required.** Guest names (`Guest01`, `Guest02`, ...) work out of the box. The game
+   asks PlayFab which `Guest0N` display names are already taken, using a doubling then binary search
+   (about 2×log₂(N) lookups), and claims the next free one. If two guests try to take the same number at
+   once, PlayFab's unique display names make one of them retry with the next number.
+4. **Optional: CloudScript counter.** If your title has *Automation > CloudScript > Revisions (Legacy)*,
+   you can upload `playfab/cloudscript.js` and deploy it. The game then uses that counter instead, which
+   takes one call instead of several lookups. Newer titles often don't have Legacy CloudScript, and that's fine.
 
 ## How accounts work
 

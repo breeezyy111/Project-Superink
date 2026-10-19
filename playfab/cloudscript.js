@@ -1,4 +1,5 @@
-// Project SuperInk: PlayFab CloudScript (legacy JavaScript CloudScript).
+// Project SuperInk: OPTIONAL PlayFab CloudScript (legacy JavaScript CloudScript).
+// The game works without it: it finds the next free GuestNN name itself.
 // Upload in Game Manager: Automation > CloudScript > Revisions (Legacy) > Upload new revision,
 // then tick "Deploy this revision".
 //
