@@ -201,6 +201,7 @@ export class InkfinModel {
   private head!: THREE.Group;
   private tentacles: THREE.Object3D[] = [];
   weaponMount = new THREE.Group();
+  offhandMount = new THREE.Group();
   weaponModel: THREE.Group | null = null;
   rollerDrum: THREE.Object3D | null = null;
   private walkPhase = 0;
@@ -367,6 +368,8 @@ export class InkfinModel {
     // weapon held in right hand
     this.weaponMount.position.set(0, -0.27, 0.02);
     this.arms[1].add(this.weaponMount);
+    this.offhandMount.position.set(0, -0.27, 0.02);
+    this.arms[0].add(this.offhandMount);
 
     // head: big and round
     this.head = new THREE.Group();
@@ -648,6 +651,8 @@ export class InkfinModel {
     this.weaponModel = m;
     this.rollerDrum = drum;
     this.weaponMount.add(m);
+    this.offhandMount.clear();
+    if (m.userData.offhand) this.offhandMount.add(m.userData.offhand as THREE.Object3D);
     m.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
   }
 
@@ -686,16 +691,24 @@ export class InkfinModel {
     }
     const bob = moving ? Math.abs(Math.cos(this.walkPhase)) * 0.05 : 0;
     this.torso.position.y = 0.5 + bob;
-    const roller = this.weapon === 'roller';
-    const twoHand = roller && !opts.flicking;
-    this.torso.rotation.y = roller ? 0 : -0.25;
-    // left arm swings (or grips the roller), right arm aims
-    const target = opts.flicking ? -2.7 : roller ? -1.0 : -Math.PI / 2 - opts.aimPitch;
+    const w = this.weapon;
+    const roller = w === 'roller';
+    const twoHand = (roller || w === 'splatling') && !opts.flicking;
+    const dual = w === 'dualies';
+    this.torso.rotation.y = roller || dual ? 0 : -0.25;
+    // left arm swings (or grips the roller / splatling / second dualie), right arm aims
+    const aim = -Math.PI / 2 - opts.aimPitch;
+    const target = opts.flicking ? (w === 'slosher' ? -2.4 : -2.7) : roller ? -1.0 : aim;
     const k = Math.min(1, dt * (opts.flicking ? 30 : 14));
     this.arms[1].rotation.x += (target - this.arms[1].rotation.x) * k;
-    this.arms[1].rotation.y = roller ? 0.3 : 0.25;
-    this.arms[0].rotation.x = twoHand ? this.arms[1].rotation.x : -swing * 0.8;
-    this.arms[0].rotation.y = twoHand ? -0.3 : 0;
+    this.arms[1].rotation.y = roller ? 0.3 : dual ? 0.12 : 0.25;
+    if (dual) {
+      this.arms[0].rotation.x += (aim - this.arms[0].rotation.x) * k;
+      this.arms[0].rotation.y = -0.12;
+    } else {
+      this.arms[0].rotation.x = twoHand ? this.arms[1].rotation.x : -swing * 0.8;
+      this.arms[0].rotation.y = twoHand ? (roller ? -0.3 : -0.45) : 0;
+    }
     this.head.rotation.x = -opts.aimPitch * 0.5;
     this.head.rotation.y = 0.25;
   }

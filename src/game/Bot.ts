@@ -100,6 +100,9 @@ export class Bot {
     switch (this.ch.weapon.kind) {
       case 'charger': return 17;
       case 'roller': return 1.5;
+      case 'slosher': return 5;
+      case 'splatling': return 11;
+      case 'dualies': return 6;
       default: return 7;
     }
   }
@@ -172,7 +175,7 @@ export class Bot {
       else if (dist < pref - 2 && ch.weapon.kind !== 'roller') toMove.sub(to);
       toMove.addScaledVector(side, ch.weapon.kind === 'charger' ? 0.3 : 0.8);
       if (this.reaction <= 0) {
-        if (ch.weapon.kind === 'charger') {
+        if (ch.weapon.kind === 'charger' || ch.weapon.kind === 'splatling') {
           // hold until charged enough, then release
           wantFire = ch.weapon.charge < this.chargeGoal;
         } else if (ch.weapon.kind === 'roller') {
@@ -200,7 +203,7 @@ export class Bot {
         const dist = ch.weapon.kind === 'charger' ? 16 : 4.5;
         aim.copy(ch.pos).addScaledVector(fwd, dist).add(side);
         aim.y = ch.pos.y;
-        if (ch.weapon.kind === 'charger') {
+        if (ch.weapon.kind === 'charger' || ch.weapon.kind === 'splatling') {
           wantFire = ch.weapon.charge < 0.9;
         } else {
           wantFire = true;
@@ -261,6 +264,14 @@ export class Bot {
       this.stuckT = 0;
       // sidestep
       toMove.add(new THREE.Vector3(-toMove.z, 0, toMove.x).multiplyScalar(this.strafe * 1.5));
+    }
+
+    // dualies: dodge roll sideways now and then in a fight
+    if (this.enemy && wantFire && ch.weapon.kind === 'dualies' && this.jumpT <= 0 && Math.random() < dt * (0.4 + this.skill)) {
+      toMove.copy(new THREE.Vector3(-toMove.z, 0, toMove.x)).normalize().multiplyScalar(this.strafe);
+      if (toMove.lengthSq() < 0.1) toMove.set(this.strafe, 0, 0);
+      jump = true;
+      this.jumpT = 0.6;
     }
 
     // out of ink: can't fire

@@ -214,8 +214,14 @@ export class Character {
     const target = tmp.set(mv.x * speed, 0, mv.y * speed);
     const accel = jetting ? 30 : this.grounded || this.climbing ? (this.swimming ? 55 : 45) : 12;
     const k = Math.min(1, accel * dt / Math.max(1, speed));
-    this.vel.x += (target.x - this.vel.x) * k;
-    this.vel.z += (target.z - this.vel.z) * k;
+    if (this.weapon.dodging) {
+      // mid dodge roll: keep the burst of speed, easing off
+      this.vel.x *= 1 - Math.min(1, dt * 3);
+      this.vel.z *= 1 - Math.min(1, dt * 3);
+    } else {
+      this.vel.x += (target.x - this.vel.x) * k;
+      this.vel.z += (target.z - this.vel.z) * k;
+    }
 
     // vertical
     if (jetting) {
@@ -237,7 +243,9 @@ export class Character {
       this.wasClimbing = false;
       this.vel.y -= PHYS.gravity * dt;
       if (this.grounded && this.vel.y < 0) this.vel.y = -1;
-      if (inp.jump && !this.jumpHeld && this.grounded) {
+      if (inp.jump && !this.jumpHeld && this.grounded && this.weapon.tryDodge(this, this.ctx)) {
+        // dualies turned the jump into a dodge roll
+      } else if (inp.jump && !this.jumpHeld && this.grounded) {
         this.vel.y = this.submerged ? PHYS.jumpSpeed * 1.12 : PHYS.jumpSpeed;
         this.grounded = false;
         this.model.pop();
