@@ -318,7 +318,7 @@ export function courtFloor(base = '#3b7dd8', key = '#e8743b') {
 }
 
 /** Polished plaza tiles with a diamond accent (one texture = 4m). */
-export function plazaTiles(base = '#e9e1d3', accent = '#d77a61') {
+export function plazaTiles(base = '#9e9080', accent = '#c25a40') {
   return cached(`plaza${base}${accent}`, () => {
     const [c, ctx] = canvas(512, 512);
     ctx.fillStyle = base;

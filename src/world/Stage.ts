@@ -69,7 +69,7 @@ function surfaceMaterial(s: Surface): { mat: THREE.Material; meters: number } {
     case 'deck': m = { mat: std(concreteTiles('#a9adbb', '#7c8194')), meters: 4 }; break;
     case 'asphalt': m = { mat: std(concreteTiles('#6c6f78', '#55575f'), 0.85), meters: 6 }; break;
     case 'roof': m = { mat: std(concreteTiles('#b8b2c4', '#8f88a0'), 0.7), meters: 3 }; break;
-    case 'plaza': m = { mat: std(plazaTiles(), 0.45), meters: 4 }; break;
+    case 'plaza': m = { mat: std(plazaTiles(), 0.72, { envMapIntensity: 0.55 }), meters: 4 }; break;
     case 'planks': m = { mat: std(planks(), 0.7), meters: 4 }; break;
     case 'brick': m = { mat: std(brick(), 0.75), meters: 4 }; break;
     case 'court': m = { mat: std(courtFloor(), 0.5), meters: 1 }; break;
