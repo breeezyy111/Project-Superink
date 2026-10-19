@@ -1,6 +1,6 @@
 # Project SuperInk
 
-A 4v4 ink-shooter inspired by Splatoon 2, built for the browser.
+A 4v4 ink-shooter inspired by Splatoon 2, built for the browser. Play against bots or with up to 7 friends online.
 
 You play as an **Inkfin**, a cuttlefish kid from the city of **Splashburg**. Paint more of the map than the other team before time runs out. Dive into your own ink to swim fast, refill your tank and climb walls.
 
@@ -36,9 +36,9 @@ If PlayFab can't be reached, the game still runs and saves progress in the brows
 | --- | --- |
 | Move | WASD |
 | Aim / look | Mouse (click the game to lock the mouse) |
-| Shoot / roll / charge | Left click (hold) |
+| Shoot / roll / charge / spin up | Left click (hold) |
 | Swim form | Shift or right click (hold) |
-| Jump | Space |
+| Jump (with Dualies: dodge roll while shooting and moving) | Space |
 | Sub weapon | E or middle click |
 | Special (when the gauge is full) | Q |
 | Enter a shop (in Splashburg) | E |
@@ -47,13 +47,26 @@ If PlayFab can't be reached, the game still runs and saves progress in the brows
 ## How it plays
 
 1. **Splashburg Plaza** is the hub. Run around as your Inkfin, paint the plaza, and walk up to a door and press **E**:
-   - **Turf Tower** is the lobby. Pick a stage (or Random) and the bot difficulty, then hit **BATTLE!**
+   - **Turf Tower** is the lobby. Pick a mode, a stage (or Random) and the bot difficulty, then hit **BATTLE!** You can also make or join a friends room here.
    - **Fizz & Splash Arms** sells weapon kits.
    - **Frill Threads** sells headgear, clothes and shoes, and you can try things on before buying.
    - **Fin Studio** is the salon: name, skin, fin hair, face marking and eyes. It's free.
    - **Your Locker** holds everything you own, so you can swap gear quickly.
-2. **Turf War** is 4v4 against bots for 3 minutes. Paint the most floor to win.
-3. **Rewards:** you earn coins and XP from the turf you painted, splats, and winning. Leveling up unlocks more items.
+2. **Modes** (4v4, 3 minutes):
+   - **Turf War:** paint the most floor to win.
+   - **Zone Control:** a zone sits in the middle of the stage. Cover 60% of it with your ink to take it. While your team holds it, your count drops from 60. First to 0 wins by knockout; otherwise the lower count wins at the buzzer. Retaking the zone adds a penalty, and the match goes to overtime if the team holding the zone is behind.
+3. **Splashburg News:** when you arrive in the plaza, Lumi and Sepia (the idol duo **Tide Pop**) announce the stages on rotation. Stages change every 2 hours. Playing a mode on one of its rotation stages earns **+25% coins**. Press **NEWS** in the top-right of the plaza to watch it again.
+4. **Results:** **Judge Jelly** watches the bars fill, then raises the winning team's flag.
+5. **Rewards:** you earn coins and XP from the turf you painted, splats, and winning. Leveling up unlocks more items.
+
+## Playing with friends (online)
+
+In the **Turf Tower**, press **CREATE ROOM** and share the 5-letter code. Friends type the code and press **JOIN**.
+- Up to 8 players. Bots fill the empty spots, so 2 friends can still play a full 4v4.
+- The host picks the mode and stage, and can click a name to move that player to the other team.
+- The host's browser runs the match. If a friend leaves, a bot takes over for them. If the host ends the match, it ends for everyone.
+- Rooms connect browsers directly with WebRTC ([PeerJS](https://peerjs.com)). PeerJS's free public server only introduces the players; very strict networks fall back to PeerJS's free relay. Nothing to set up.
+- To use your own PeerJS server instead, set `VITE_PEER_HOST=host:port` when building (or add `?peerhost=host:port` to the URL).
 
 ## Weapon kits
 
@@ -64,7 +77,10 @@ Every kit is a main weapon plus its own sub weapon and special. Painting fills y
 | Fizz Blaster (Lv 1) | full-auto shooter | **Fizz Burst**: pops on impact | **Squall Cloud**: storm cloud that rains your ink |
 | Grind Roller (Lv 2) | flick, then roll | **Slide Bomb**: skids along the floor painting a lane | **Ink Tsunami**: giant wave that rolls forward |
 | Streak Charger (Lv 3) | long-range charge shot | **Ink Mine**: hidden trap | **Shell Shield**: bubble dome that blocks enemy ink |
+| Twin Dualies (Lv 3) | two quick pistols; Jump while shooting to dodge-roll (2 in a row) | **Slide Bomb** | **Turbo Jet** |
 | Boom Blaster (Lv 4) | slow, exploding shells | **Pop Bomb**: bouncy, big blast | **Turbo Jet**: fly up and rain explosive shots |
+| Splash Bucket (Lv 4) | a slosher: lobs a heavy wave of ink over walls | **Fizz Burst** | **Ink Tsunami** |
+| Whirl Splatling (Lv 5) | hold to spin up, release to unload a long stream | **Ink Mine** | **Squall Cloud** |
 
 ## Stages
 
@@ -92,10 +108,12 @@ src/
   world/stages.ts      the five battle stages
   world/textures.ts    procedural textures (tiles, planks, containers, signs, water...)
   game/Character.ts    movement, swim/climb, health, ink tank
-  game/weapons.ts      Fizz Blaster, Grind Roller, Streak Charger, Boom Blaster (+ models)
+  game/weapons.ts      all main weapons (shooter, roller, charger, blaster, slosher, splatling, dualies) + models
   game/Bot.ts          bot AI
   game/World.ts        shared ink world (painting credit, explosions, damage)
-  game/Match.ts        Turf War rules, splats, respawns, phases, rewards summary
+  game/Match.ts        Turf War / Zone Control rules, splats, respawns, phases, online roster
+  game/Zones.ts        Zone Control: zone area, capture, counts, penalty, outline
+  game/rotation.ts     stage rotation (every 2 hours, same for everyone)
   game/Hub.ts          Splashburg Plaza: shops, NPCs, door zones
   game/kit.ts          subs + specials (bombs, mines, cloud, wave, shield, jet)
   game/items.ts        weapon kits and gear catalog
@@ -107,12 +125,17 @@ src/
   online/PlayFab.ts    PlayFab Client API over REST
   online/Account.ts    guest / sign up / sign in / remember me / cloud save
   ui/AuthUI.ts         Splashburg ID page + account panel
+  ui/News.ts           Splashburg News broadcast (Tide Pop)
+  ui/Mascots.ts        SVG art: Judge Jelly, Lumi and Sepia
+  online/Room.ts       friends rooms over WebRTC (PeerJS)
+  online/NetGame.ts    online match sync (host snapshots + ink, friends' input)
 playfab/               CloudScript (guest names) and setup guide
 ```
 
 ### Dev URL flags
 
-- `?play`: skip menus and start a match right away (add `&stage=yard` etc. to pick one).
+- `?play`: skip menus and start a match right away (add `&stage=yard` etc. to pick one, `&mode=zones` for Zone Control).
+- `?nonews`: skip Splashburg News.
 - `?hub`: start in Splashburg Plaza.
 - `?play&demo`: bots control every character, with an overhead orbit camera.
 - `?play&demo&follow`: same as above, with the camera chasing your bot-controlled character.
@@ -121,8 +144,8 @@ playfab/               CloudScript (guest names) and setup guide
 ## Ideas for what's next
 
 - Gear abilities (like Splatoon's main/sub abilities)
-- Our own mascot / announcers (Judge Jelly is a placeholder name)
-- Other modes (Splat Zones-style), online multiplayer
+- More modes (Rainmaker / Tower Control-style)
+- Online matchmaking with strangers (rooms are friends-only for now)
 - Performance pass (merge character meshes)
 - An Octo Expansion-style story mode (later!)
 

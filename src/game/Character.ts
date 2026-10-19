@@ -58,6 +58,10 @@ export class Character {
   private jetBaseY = 0;
   /** ownership cells this character painted this match */
   painted = 0;
+  /** online: position/velocity from the network (null = simulated here) */
+  net: { pos: THREE.Vector3; vel: THREE.Vector3; grounded: boolean } | null = null;
+  /** online: bumps on every respawn so stale position updates can be ignored */
+  life = 0;
   model: InkfinModel;
   collider: RAPIER.Collider;
   private controller: RAPIER.KinematicCharacterController;
@@ -109,6 +113,11 @@ export class Character {
     this.jetT = 0;
     this.specialT = 0;
     this.weapon.reset();
+    this.life++;
+    if (this.net) {
+      this.net.pos.copy(p);
+      this.net.vel.set(0, 0, 0);
+    }
     this.model.root.visible = true;
     this.syncCollider();
   }
@@ -201,6 +210,71 @@ export class Character {
     }
     this.submerged = this.swimming && (this.standing === 'own' || this.climbing);
 
+    if (this.net) this.followNet(dt);
+    else this.move(dt, jetting);
+
+    // facing
+    if (this.swimming) {
+      if (mv.lengthSq() > 0.02) this.yaw = lerpAngle(this.yaw, Math.atan2(mv.x, mv.y), Math.min(1, dt * 14));
+    } else if (this.weapon.rolling) {
+      if (mv.lengthSq() > 0.02) this.yaw = lerpAngle(this.yaw, Math.atan2(mv.x, mv.y), Math.min(1, dt * 7));
+    } else {
+      this.yaw = lerpAngle(this.yaw, inp.aimYaw, Math.min(1, dt * 18));
+    }
+
+    // weapon
+    if (!jetting) this.weapon.update(dt, this, this.ctx);
+    this.kitState.update(dt, this, this.ctx);
+
+    // ink tank
+    if (this.submerged) this.ink += INK_TANK.refillSwim * dt;
+    else if (!inp.fire) this.ink += INK_TANK.refillIdle * dt;
+    this.ink = THREE.MathUtils.clamp(this.ink, 0, INK_TANK.max);
+
+    // enemy ink hurts (up to a cap), regen when safe
+    if (this.standing === 'enemy' && this.grounded) {
+      const dmg = HEALTH.enemyInkDps * dt;
+      // enemy ink chips away at you, but can never splat you on its own
+      if (this.enemyInkDamage < HEALTH.enemyInkDamageCap && this.hp > 1) {
+        this.hp = Math.max(1, this.hp - dmg);
+        this.enemyInkDamage += dmg;
+      }
+      this.lastHurtT = Math.min(this.lastHurtT, 0.5);
+    } else {
+      this.enemyInkDamage = Math.max(0, this.enemyInkDamage - dt * 30);
+    }
+    if (this.lastHurtT > HEALTH.regenDelay) {
+      this.hp = Math.min(HEALTH.max, this.hp + HEALTH.regenPerSec * (this.submerged ? 1.6 : 1) * dt);
+    }
+
+    // swim sfx/ripples
+    if (this.submerged && this.horizontalSpeed() > 2) {
+      this.swimSfxT -= dt;
+      if (this.swimSfxT <= 0) {
+        this.swimSfxT = 0.12;
+        this.ctx.effects.burst(this.pos.clone().setY(this.pos.y + 0.1), new THREE.Vector3(0, 1, 0), this.ctx.colorOf(this.team), 2, 2.2, 0.06);
+        if (this.isPlayer) this.ctx.sfx.swim();
+      }
+    }
+
+    this.updateModel(dt);
+  }
+
+  private wasClimbing = false;
+
+  /** Online: this character is driven by someone else's position updates. */
+  private followNet(dt: number) {
+    const n = this.net!;
+    if (n.pos.distanceToSquared(this.pos) > 16) this.pos.copy(n.pos);
+    else this.pos.lerp(n.pos, Math.min(1, dt * 14));
+    this.vel.copy(n.vel);
+    this.grounded = n.grounded;
+    this.syncCollider();
+  }
+
+  private move(dt: number, jetting: boolean) {
+    const inp = this.input;
+    const mv = inp.move;
     // speed
     let speed = PHYS.walkSpeed;
     if (this.swimming) {
@@ -267,55 +341,7 @@ export class Character {
       if (this.vel.y > 0 && m.y < delta.y * 0.5 && !this.climbing) this.vel.y = 0;
     }
     this.syncCollider();
-
-    // facing
-    if (this.swimming) {
-      if (mv.lengthSq() > 0.02) this.yaw = lerpAngle(this.yaw, Math.atan2(mv.x, mv.y), Math.min(1, dt * 14));
-    } else if (this.weapon.rolling) {
-      if (mv.lengthSq() > 0.02) this.yaw = lerpAngle(this.yaw, Math.atan2(mv.x, mv.y), Math.min(1, dt * 7));
-    } else {
-      this.yaw = lerpAngle(this.yaw, inp.aimYaw, Math.min(1, dt * 18));
-    }
-
-    // weapon
-    if (!jetting) this.weapon.update(dt, this, this.ctx);
-    this.kitState.update(dt, this, this.ctx);
-
-    // ink tank
-    if (this.submerged) this.ink += INK_TANK.refillSwim * dt;
-    else if (!inp.fire) this.ink += INK_TANK.refillIdle * dt;
-    this.ink = THREE.MathUtils.clamp(this.ink, 0, INK_TANK.max);
-
-    // enemy ink hurts (up to a cap), regen when safe
-    if (this.standing === 'enemy' && this.grounded) {
-      const dmg = HEALTH.enemyInkDps * dt;
-      // enemy ink chips away at you, but can never splat you on its own
-      if (this.enemyInkDamage < HEALTH.enemyInkDamageCap && this.hp > 1) {
-        this.hp = Math.max(1, this.hp - dmg);
-        this.enemyInkDamage += dmg;
-      }
-      this.lastHurtT = Math.min(this.lastHurtT, 0.5);
-    } else {
-      this.enemyInkDamage = Math.max(0, this.enemyInkDamage - dt * 30);
-    }
-    if (this.lastHurtT > HEALTH.regenDelay) {
-      this.hp = Math.min(HEALTH.max, this.hp + HEALTH.regenPerSec * (this.submerged ? 1.6 : 1) * dt);
-    }
-
-    // swim sfx/ripples
-    if (this.submerged && this.horizontalSpeed() > 2) {
-      this.swimSfxT -= dt;
-      if (this.swimSfxT <= 0) {
-        this.swimSfxT = 0.12;
-        this.ctx.effects.burst(this.pos.clone().setY(this.pos.y + 0.1), new THREE.Vector3(0, 1, 0), this.ctx.colorOf(this.team), 2, 2.2, 0.06);
-        if (this.isPlayer) this.ctx.sfx.swim();
-      }
-    }
-
-    this.updateModel(dt);
   }
-
-  private wasClimbing = false;
 
   private updateModel(dt: number) {
     const r = this.model.root;

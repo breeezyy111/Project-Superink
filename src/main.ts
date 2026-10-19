@@ -8,7 +8,7 @@ import { Sfx } from './audio/Sfx';
 import { Renderer } from './engine/Renderer';
 import { Hub, HUB_DEF, ZONES } from './game/Hub';
 import { kit } from './game/items';
-import { Match, MatchSummary, MODE_NAMES } from './game/Match';
+import { Match, MatchSummary, MODE_NAMES, randomLook } from './game/Match';
 import { ZONE_COUNT } from './game/Zones';
 import { PlayerController } from './game/PlayerController';
 import { addXp, defaultProfile, loadProfile, Profile, saveProfile, xpToNext } from './game/profile';
@@ -22,6 +22,11 @@ import { ShopUI } from './ui/Shops';
 import { News } from './ui/News';
 import { judgeJellySvg } from './ui/Mascots';
 import { currentRotation, onRotation, ROTATION_BONUS } from './game/rotation';
+import { Room, Msg } from './online/Room';
+import { ClientSync, HostSync } from './online/NetGame';
+import type { NetOpts, RosterSlot, Mode } from './game/Match';
+import { KITS } from './game/items';
+import { INK_PAIRS, TEAM_SIZE, Team } from './config';
 import { Stage, StageDef } from './world/Stage';
 import { stageById, STAGES } from './world/stages';
 
@@ -103,6 +108,7 @@ async function boot() {
   };
 
   const teardown = () => {
+    netSync = null;
     minimap.hide();
     match?.dispose();
     match = null;
@@ -128,7 +134,7 @@ async function boot() {
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
-  const newMatch = (st: Stage, demo: boolean) => {
+  const newMatch = (st: Stage, demo: boolean, net?: NetOpts, netMode?: Mode) => {
     match = new Match(r, st, sfx, demo ? null : controller, {
       onFeed: (t, k) => hud.pushFeed(t, k),
       onPlayerSplatted: (by) => hud.showSplatted(by),
@@ -146,7 +152,7 @@ async function boot() {
       },
       onZone: (e) => {
         if (demo || screen !== 'match') return;
-        const ours = e.team === 0;
+        const ours = e.team === match?.player.team;
         if (e.kind === 'captured') {
           hud.bigText(ours ? 'WE GOT THE ZONE!' : 'THEY TOOK THE ZONE!', !ours, 1600);
           if (ours) sfx.specialReady();
@@ -160,7 +166,8 @@ async function boot() {
         hud.bigText('OVERTIME!', true, 1600);
         sfx.whistle();
       },
-    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty, mode: params.get('mode') === 'zones' ? 'zones' : demo ? 'turf' : profile.mode });
+    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty, net,
+      mode: netMode ?? (params.get('mode') === 'zones' ? 'zones' : demo ? 'turf' : profile.mode) });
     hud.setup(match);
     if (!demo) minimap.setup(match);
   };
@@ -303,7 +310,22 @@ async function boot() {
     },
     onBattle: () => {
       unlockAudio();
-      startMatch();
+      if (room?.isHost) startRoomMatch();
+      else if (!room) startMatch();
+    },
+    friends: {
+      room: () => room,
+      create: async () => {
+        setRoom(await Room.host(me(), { mode: profile.mode, stage: profile.stage }));
+        toast(`Room ${room!.code} is open! Share the code with your friends.`);
+      },
+      join: async (code: string) => {
+        setRoom(await Room.join(code, me()));
+        toast(`Joined room ${room!.code}!`);
+      },
+      leave: () => {
+        room?.leave();
+      },
     },
   });
   window.addEventListener('keydown', (e) => {
@@ -386,10 +408,139 @@ async function boot() {
   const exitMatch = () => {
     if (screen !== 'match') return;
     sfx.ui();
+    // online: the host ending the match ends it for everyone; a friend leaving leaves the room
+    if (room && netSync) {
+      if (room.isHost) room.broadcast({ t: 'abort' });
+      else room.leave();
+    }
     goHub(true);
   };
   $('btn-quit').addEventListener('click', exitMatch);
   $('btn-exit').addEventListener('click', exitMatch);
+
+  // ---------- online friends rooms ----------
+  let room: Room | null = null;
+  let netSync: HostSync | ClientSync | null = null;
+  const readyFrom = new Set<string>();
+  const me = () => ({ name: profile.name || 'Player', look: profile.look, kit: profile.kit });
+
+  const setRoom = (r: Room) => {
+    room = r;
+    r.onChange = () => {
+      if (shop.zoneId === 'tower') shop.refresh();
+    };
+    r.onMessage = (from: string, msg: Msg) => {
+      if (msg.t === 'ready') readyFrom.add(from);
+      else if (msg.t === 'start' && !r.isHost) joinRoomMatch(msg as unknown as StartMsg);
+      else if (msg.t === 'abort' && !r.isHost) {
+        if (screen === 'match' || screen === 'results') {
+          toast('The host ended the match.');
+          goHub(true);
+        }
+      } else if (netSync instanceof HostSync) netSync.handle(from, msg);
+      else if (netSync instanceof ClientSync) netSync.handle(msg);
+    };
+    r.onLeft = (id: string) => {
+      if (netSync instanceof HostSync) netSync.left(id);
+    };
+    r.onClosed = (reason: string) => {
+      const wasClient = !r.isHost;
+      room = null;
+      if (reason) toast(reason, true);
+      shop.refresh();
+      if (wasClient && netSync && (screen === 'match' || screen === 'results')) goHub(true);
+    };
+    shop.refresh();
+  };
+
+  interface StartMsg {
+    t: 'start';
+    stage: string;
+    mode: Mode;
+    pair: number;
+    roster: RosterSlot[];
+    peers: (string | null)[];
+  }
+
+  /** host: fill both teams with the room's players, then bots */
+  const buildRoster = (r: Room) => {
+    const roster: RosterSlot[] = [];
+    const peers: (string | null)[] = [];
+    const used = new Set(r.members.map((m) => m.name));
+    const botNames = ['Squidge', 'Frilly', 'Nautia', 'Cuddle', 'Sepi', 'Murk', 'Zebra', 'Bubbs', 'Fizzy', 'Ruffle', 'Wiggs', 'Coral'].filter((n) => !used.has(n));
+    for (const t of [0, 1] as Team[]) {
+      const humans = r.members.filter((m) => m.team === t);
+      for (const h of humans) {
+        roster.push({ name: h.name, team: t, look: h.look, kit: h.kit, human: true });
+        peers.push(h.id);
+      }
+      for (let i = humans.length; i < TEAM_SIZE; i++) {
+        const k = KITS[Math.floor(Math.random() * KITS.length)];
+        roster.push({ name: botNames.splice(Math.floor(Math.random() * botNames.length), 1)[0] ?? 'Bot', team: t, look: randomLook(), kit: k.id, human: false });
+        peers.push(null);
+      }
+    }
+    return { roster, peers };
+  };
+
+  const startRoomMatch = async () => {
+    const r = room;
+    if (!r || !r.isHost || busy) return;
+    busy = true;
+    loading(true);
+    hideAll();
+    shop.close();
+    const mode = r.settings.mode;
+    const def = r.settings.stage === 'random'
+      ? currentRotation()[mode][Math.floor(Math.random() * 2)]
+      : stageById(r.settings.stage);
+    lastStageId = def.id;
+    const { roster, peers } = buildRoster(r);
+    const pair = Math.floor(Math.random() * INK_PAIRS.length);
+    readyFrom.clear();
+    r.broadcast({ t: 'start', stage: def.id, mode, pair, roster, peers });
+    const st = await loadStage(def);
+    // wait (up to 20s) for everyone to load the stage
+    const waiting = peers.filter((id): id is string => !!id && id !== r.myId);
+    const t0 = performance.now();
+    while (waiting.some((id) => !readyFrom.has(id) && r.members.some((m) => m.id === id)) && performance.now() - t0 < 20000) {
+      await new Promise((res) => setTimeout(res, 100));
+    }
+    screen = 'match';
+    paused = false;
+    show('hud', true);
+    newMatch(st, false, { role: 'host', roster, localSlot: peers.indexOf(r.myId), pairIndex: pair }, mode);
+    netSync = new HostSync(r, match!, peers);
+    // anyone who left while we loaded becomes a bot
+    for (const id of waiting) if (!r.members.some((m) => m.id === id)) (netSync as HostSync).left(id);
+    music.playRandomBattle();
+    loading(false);
+    busy = false;
+    controller.requestLock();
+  };
+
+  const joinRoomMatch = async (msg: StartMsg) => {
+    const r = room;
+    if (!r) return;
+    if (busy) await new Promise((res) => setTimeout(res, 300));
+    busy = true;
+    loading(true);
+    hideAll();
+    shop.close();
+    accountPanel.close?.();
+    const st = await loadStage(stageById(msg.stage));
+    lastStageId = msg.stage;
+    screen = 'match';
+    paused = false;
+    show('hud', true);
+    newMatch(st, false, { role: 'client', roster: msg.roster, localSlot: msg.peers.indexOf(r.myId), pairIndex: msg.pair }, msg.mode);
+    netSync = new ClientSync(r, match!);
+    r.send({ t: 'ready' });
+    music.playRandomBattle();
+    loading(false);
+    busy = false;
+    controller.requestLock();
+  };
 
   // ---------- results ----------
   const showResults = () => {
@@ -399,19 +550,25 @@ async function boot() {
     hud.hideBig();
     const m = match;
     const sum: MatchSummary = m.summary();
-    const [a, b] = sum.turf;
+    // "a" is always your team
+    const me = m.player.team, them = (1 - me) as Team;
+    const a = sum.turf[me], b = sum.turf[them];
+    const mine = m.colorOf(me), theirs = m.colorOf(them);
     show('results', true);
     $('res-stage').textContent = `${MODE_NAMES[m.mode]} • ${m.stage.def.name}`;
+    const again = $('btn-again') as HTMLButtonElement;
+    again.disabled = !!room && !room.isHost;
+    again.textContent = room ? (room.isHost ? 'BATTLE AGAIN' : 'WAITING FOR HOST...') : 'BATTLE AGAIN';
     // Judge Jelly looks back and forth while the bars fill, then raises the winner's flag
     const judge = $('res-judge');
     judge.className = 'judge thinking';
-    judge.innerHTML = judgeJellySvg(m.pair.alpha, m.pair.bravo) + '<div class="judge-say"></div>';
+    judge.innerHTML = judgeJellySvg(mine, theirs) + '<div class="judge-say"></div>';
     const winner = $('res-winner');
     winner.textContent = sum.ko ? (sum.win ? 'KNOCKOUT! YOU WIN!' : 'KNOCKED OUT...') : sum.win ? 'YOUR TEAM WINS!' : 'DEFEAT...';
     winner.style.color = m.colorOf(sum.win ? 0 : 1);
     const fa = $('res-a'), fb = $('res-b');
-    fa.style.background = m.pair.alpha;
-    fb.style.background = m.pair.bravo;
+    fa.style.background = mine;
+    fb.style.background = theirs;
     fa.style.width = fb.style.width = '0%';
     $('res-a-pct').textContent = '';
     $('res-b-pct').textContent = '';
@@ -420,7 +577,7 @@ async function boot() {
         // bars show each team's share of the painted turf; labels show map coverage
         // (Zone Control: how far each team counted down)
         const zc = sum.zoneCount;
-        const [va, vb] = zc ? [ZONE_COUNT - zc[0], ZONE_COUNT - zc[1]] : [a, b];
+        const [va, vb] = zc ? [ZONE_COUNT - zc[me], ZONE_COUNT - zc[them]] : [a, b];
         const total = Math.max(1e-6, va + vb);
         fa.style.width = `${Math.max(4, (va / total) * 100)}%`;
         fb.style.width = `${Math.max(4, (vb / total) * 100)}%`;
@@ -438,8 +595,8 @@ async function boot() {
     rw.innerHTML = '';
     setTimeout(() => {
       const zc = sum.zoneCount;
-      $('res-a-pct').textContent = zc ? `${zc[0]} left` : `${(a * 100).toFixed(1)}%`;
-      $('res-b-pct').textContent = zc ? `${zc[1]} left` : `${(b * 100).toFixed(1)}%`;
+      $('res-a-pct').textContent = zc ? `${zc[me]} left` : `${(a * 100).toFixed(1)}%`;
+      $('res-b-pct').textContent = zc ? `${zc[them]} left` : `${(b * 100).toFixed(1)}%`;
       sfx.whistle();
       judge.className = `judge decided ${sum.win ? 'win-a' : 'win-b'}`;
       (judge.querySelector('.judge-say') as HTMLElement).textContent = sum.win ? (sum.ko ? 'Knockout!' : 'Your team wins!') : 'The other team wins!';
@@ -461,16 +618,19 @@ async function boot() {
       }
       sfx.coin();
     }, 2300);
+    // online friends get the host's numbers
+    const statOf = (i: number) => m.netFinal?.stats[i] ?? m.characters[i];
     $('res-table').innerHTML = m.characters
       .map(
-        (c) => `<tr class="${c.isPlayer ? 'me' : ''}"><td><span class="dot" style="background:${m.colorOf(c.team)}"></span></td>
-        <td>${escapeHtml(c.name)}</td><td>${WEAPONS[c.weapon.kind].name}</td><td>${Math.round(c.painted / 9)}p</td><td>${c.splats} splats</td><td>${c.deaths} falls</td></tr>`,
+        (c, i) => `<tr class="${c.isPlayer ? 'me' : ''}"><td><span class="dot" style="background:${m.colorOf(c.team)}"></span></td>
+        <td>${escapeHtml(c.name)}</td><td>${WEAPONS[c.weapon.kind].name}</td><td>${Math.round(statOf(i).painted / 9)}p</td><td>${statOf(i).splats} splats</td><td>${statOf(i).deaths} falls</td></tr>`,
       )
       .join('');
   };
   $('btn-again').addEventListener('click', () => {
     sfx.ui();
-    startMatch();
+    if (room?.isHost) startRoomMatch();
+    else if (!room) startMatch();
   });
   $('btn-hub').addEventListener('click', () => {
     sfx.ui();
@@ -529,7 +689,11 @@ async function boot() {
       return;
     }
 
-    if (match && !paused) match.update(dt);
+    // online matches keep running while the pause menu is open
+    if (match && (!paused || netSync)) {
+      match.update(dt);
+      netSync?.update(dt);
+    }
     if (match) {
       if (params.has('follow') && screen === 'match') {
         controller.follow(dt, match.player, r.camera, match.physics);
@@ -557,6 +721,9 @@ async function boot() {
     get hub() { return hub; },
     get screen() { return screen; },
     r, preview, profile, save, shop, controller, music, account, auth, zones: ZONES,
+    get room() { return room; },
+    get netSync() { return netSync; },
+    startRoomMatch,
     goHub, startMatch,
     step(n = 60, dt = 1 / 60) {
       for (let i = 0; i < n; i++) {

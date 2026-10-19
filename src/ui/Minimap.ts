@@ -63,6 +63,8 @@ export class Minimap {
     this.canvas.height = Math.round(ch * dpr);
 
     this.colors = [hexRgb(m.pair.alpha), hexRgb(m.pair.bravo)];
+    // your base is always at the bottom
+    this.canvas.style.transform = m.player.team === 1 ? 'rotate(180deg)' : '';
 
     // floor faces, lowest first so higher platforms draw on top
     const floors = m.ink.faces.filter((f) => f.isFloor).sort((a, b2) => a.wOrigin.y - b2.wOrigin.y);

@@ -1,4 +1,4 @@
-import { INK_TANK, RESPAWN_SECONDS } from '../config';
+import { INK_TANK, RESPAWN_SECONDS, Team } from '../config';
 import type { Match } from '../game/Match';
 import { SPECIALS, SUBS } from '../game/items';
 import { WEAPONS } from '../game/weapons';
@@ -54,16 +54,19 @@ export class Hud {
   }
 
   setup(m: Match) {
-    document.documentElement.style.setProperty('--ink-a', m.pair.alpha);
-    document.documentElement.style.setProperty('--ink-b', m.pair.bravo);
+    // "a" is always your team (left side), "b" the other team
+    const me = m.player.team;
+    const mine = m.colorOf(me), theirs = m.colorOf((1 - me) as Team);
+    document.documentElement.style.setProperty('--ink-a', mine);
+    document.documentElement.style.setProperty('--ink-b', theirs);
     this.wcName.textContent = WEAPONS[m.player.weapon.kind].name;
     const kit = m.player.kitState.kit;
     $('wc-sub').textContent = SUBS[kit.sub].name;
     $('wc-special').textContent = SPECIALS[kit.special].name;
     $('sg-name').textContent = SPECIALS[kit.special].name;
     $('wc-sub-mark').style.left = `${(SUBS[kit.sub].cost / INK_TANK.max) * 100}%`;
-    this.wcInk.style.background = m.pair.alpha;
-    this.vignette.style.setProperty('--hurt', hexA(m.pair.bravo, 0.85));
+    this.wcInk.style.background = mine;
+    this.vignette.style.setProperty('--hurt', hexA(theirs, 0.85));
     this.feed.innerHTML = '';
     this.splatted.classList.add('hidden');
     this.big.classList.add('hidden');
@@ -137,8 +140,8 @@ export class Hud {
           .filter((c) => c.team === team)
           .map((c) => `<div class="ticon ${c.alive ? '' : 'dead'} ${c.isPlayer ? 'me' : ''}" title="${c.name}">${CUTTLE_SVG(m.colorOf(team))}</div>`)
           .join('');
-      this.teamA.innerHTML = icons(0);
-      this.teamB.innerHTML = icons(1);
+      this.teamA.innerHTML = icons(m.player.team);
+      this.teamB.innerHTML = icons((1 - m.player.team) as Team);
     }
 
     const p = m.player;
@@ -146,29 +149,31 @@ export class Hud {
     this.inkRing.style.strokeDashoffset = String(138.2 * (1 - inkFrac));
     this.inkRing.style.stroke = inkFrac < 0.2 ? '#ff2fa8' : '#fff';
     this.chargeRing.style.strokeDashoffset = String(188.5 * (1 - p.weapon.charge));
-    this.chargeRing.style.stroke = p.weapon.charge >= 1 ? '#ffffff' : m.pair.alpha;
+    this.chargeRing.style.stroke = p.weapon.charge >= 1 ? '#ffffff' : m.colorOf(p.team);
     this.inkLow.classList.toggle('hidden', !(inkFrac < 0.12 && p.alive && m.phase === 'play'));
     this.wcInk.style.width = `${inkFrac * 100}%`;
     this.crosshair.style.opacity = p.alive && m.phase === 'play' ? (p.swimming ? '0.35' : '1') : '0';
 
     const z = m.zones;
+    const me = p.team, them = (1 - me) as Team;
     if (z) {
-      this.zcA.textContent = String(Math.ceil(z.count[0]));
-      this.zcB.textContent = String(Math.ceil(z.count[1]));
-      this.zpA.textContent = z.penalty[0] > 0 ? `+${Math.ceil(z.penalty[0])}` : '';
-      this.zpB.textContent = z.penalty[1] > 0 ? `+${Math.ceil(z.penalty[1])}` : '';
-      this.zcA.parentElement!.classList.toggle('held', z.owner === 0);
-      this.zcB.parentElement!.classList.toggle('held', z.owner === 1);
-      this.zIcon.className = `zicon ${z.owner === 0 ? 'a' : z.owner === 1 ? 'b' : ''}`;
-      this.zsA.style.width = `${z.share[0] * 100}%`;
-      this.zsB.style.width = `${z.share[1] * 100}%`;
+      this.zcA.textContent = String(Math.ceil(z.count[me]));
+      this.zcB.textContent = String(Math.ceil(z.count[them]));
+      this.zpA.textContent = z.penalty[me] > 0 ? `+${Math.ceil(z.penalty[me])}` : '';
+      this.zpB.textContent = z.penalty[them] > 0 ? `+${Math.ceil(z.penalty[them])}` : '';
+      this.zcA.parentElement!.classList.toggle('held', z.owner === me);
+      this.zcB.parentElement!.classList.toggle('held', z.owner === them);
+      this.zIcon.className = `zicon ${z.owner === me ? 'a' : z.owner === them ? 'b' : ''}`;
+      this.zsA.style.width = `${z.share[me] * 100}%`;
+      this.zsB.style.width = `${z.share[them] * 100}%`;
     }
 
     // live turf bar: your team fills from the left, theirs from the right
     this.turfT -= 1;
     if (!z && this.turfT <= 0) {
       this.turfT = 10;
-      const [a, b] = m.ink.turf();
+      const turf = m.ink.turf();
+      const a = turf[me], b = turf[them];
       this.turfA.style.width = `${a * 100}%`;
       this.turfB.style.width = `${b * 100}%`;
       this.turfAPct.textContent = `${(a * 100).toFixed(1)}%`;

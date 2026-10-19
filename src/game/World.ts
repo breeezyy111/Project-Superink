@@ -17,6 +17,8 @@ export abstract class InkWorld implements GameCtx {
   gadgets: Gadgets;
   listener = new THREE.Vector3();
   allowKit = true;
+  /** false on an online client: the host decides hits and paint, we only show effects */
+  authority = true;
 
   constructor(protected scene: THREE.Scene, readonly stage: Stage, readonly sfx: Sfx) {
     this.projectiles = new Projectiles(scene);
@@ -38,12 +40,14 @@ export abstract class InkWorld implements GameCtx {
   protected abstract onHit(target: Character, attacker: Character, died: boolean): void;
 
   damage(target: Character, amount: number, attacker: Character) {
+    if (!this.authority) return;
     if (!target.alive || target.team === attacker.team) return;
     const died = target.hurt(amount, attacker);
     this.onHit(target, attacker, died);
   }
 
   paintBy(owner: Character, circles: SplatCircle[]) {
+    if (!this.authority) return;
     const n = this.ink.paint(circles, owner.team);
     owner.painted += n;
     if (owner.specialT <= 0 && owner.special < 100) {
@@ -54,6 +58,11 @@ export abstract class InkWorld implements GameCtx {
   }
 
   explode(at: THREE.Vector3, radius: number, max: number, min: number, team: Team, owner: Character, exclude?: Character) {
+    if (!this.authority) {
+      this.effects.burst(at, null, this.colorOf(team), 26, 8, 0.12);
+      this.sfx.boom(this.listener.distanceTo(at));
+      return;
+    }
     const ground = this.physics.raycast(at.clone().setY(at.y + 0.2), new THREE.Vector3(0, -1, 0), radius + 0.5);
     const normal = ground ? ground.normal : new THREE.Vector3(0, 1, 0);
     const center = ground && ground.dist < radius * 0.8 ? ground.point : at;

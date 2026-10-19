@@ -2,12 +2,14 @@ import type { Sfx } from '../audio/Sfx';
 import { EYE_COLORS, HAIR_NAMES, Look, MARK_NAMES, SKIN_TONES } from '../game/InkfinModel';
 import { gear, GearItem, gearIn, kit, Kit, KITS, Slot, SPECIALS, SUBS } from '../game/items';
 import type { Difficulty, Profile } from '../game/profile';
+import type { Team } from '../config';
 import type { ZoneId } from '../game/Hub';
 import { Mode, MODE_NAMES } from '../game/Match';
 import { currentRotation, ROTATION_BONUS } from '../game/rotation';
 import { WEAPONS } from '../game/weapons';
 import { STAGES } from '../world/stages';
 import type { LockerStage } from './LockerStage';
+import { MAX_PLAYERS, Room } from '../online/Room';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -21,6 +23,15 @@ export interface ShopDeps {
   rename: ((name: string) => Promise<string>) | null;
   onClose(): void;
   onBattle(): void;
+  friends: FriendsApi;
+}
+
+/** Online friends rooms, as seen from the Turf Tower. */
+export interface FriendsApi {
+  room(): Room | null;
+  create(): Promise<void>;
+  join(code: string): Promise<void>;
+  leave(): void;
 }
 
 const INFO: Record<ZoneId, { tag: string; name: string; quotes: string[] }> = {
@@ -68,6 +79,15 @@ export class ShopUI {
 
   private owned(id: string) {
     return this.d.profile.owned.includes(id);
+  }
+
+  /** re-draw the open shop (e.g. when the friends room changes) */
+  refresh() {
+    if (this.open) this.render();
+  }
+
+  get zoneId() {
+    return this.zone;
   }
 
   private render() {
@@ -313,16 +333,29 @@ export class ShopUI {
     kitEl.className = 'detail';
     kitEl.innerHTML = `<div class="kitline">Your kit: <b>${WEAPONS[k.main].name}</b> + ${SUBS[k.sub].name} + ${SPECIALS[k.special].name}</div>`;
     body.appendChild(kitEl);
+    const room = this.d.friends.room();
+    const guest = !!room && !room.isHost;
     const go = document.createElement('button');
     go.className = 'blob-btn';
-    go.textContent = 'BATTLE!';
+    go.textContent = room ? (guest ? 'WAITING FOR HOST...' : 'BATTLE WITH FRIENDS!') : 'BATTLE!';
     go.style.alignSelf = 'flex-start';
+    go.disabled = guest;
     go.onclick = () => {
+      if (guest) return;
       this.d.sfx.ui();
       $('shop').classList.add('hidden');
       this.d.onBattle();
     };
     body.appendChild(go);
+    this.renderFriends(body, room);
+    if (guest) {
+      const info = document.createElement('div');
+      info.className = 'detail';
+      const st = room.settings.stage === 'random' ? 'Random Stage' : STAGES.find((x) => x.id === room.settings.stage)?.name ?? '';
+      info.innerHTML = `<div class="kitline">The host picks: <b>${MODE_NAMES[room.settings.mode]}</b> on <b>${st}</b></div>`;
+      body.appendChild(info);
+      return;
+    }
 
     const modes = document.createElement('div');
     modes.className = 'card-list';
@@ -336,6 +369,7 @@ export class ShopUI {
       c.innerHTML = `<div class="sn">${MODE_NAMES[o.id]}</div><div class="sb">${o.blurb}</div>`;
       c.onclick = () => {
         p.mode = o.id;
+        room?.setSettings({ mode: o.id });
         this.d.save();
         this.d.sfx.ui();
         this.render();
@@ -362,6 +396,7 @@ export class ShopUI {
       c.innerHTML = `<div class="sn">${o.name}${star}</div><div class="sb">${o.blurb}</div>`;
       c.onclick = () => {
         p.stage = o.id;
+        room?.setSettings({ stage: o.id });
         this.d.save();
         this.d.sfx.ui();
         this.render();
@@ -393,6 +428,115 @@ export class ShopUI {
     f2.innerHTML = '<span>Bot difficulty</span>';
     f2.appendChild(seg);
     body.appendChild(f2);
+  }
+
+  private renderFriends(body: HTMLElement, room: Room | null) {
+    const f = document.createElement('div');
+    f.className = 'field';
+    f.innerHTML = '<span>Play with friends (online)</span>';
+    const box = document.createElement('div');
+    box.className = 'friends';
+    f.appendChild(box);
+    body.appendChild(f);
+    const err = document.createElement('div');
+    err.className = 'friends-err';
+    const busy = (b: HTMLButtonElement, p: Promise<void>, label: string) => {
+      const old = b.textContent;
+      b.disabled = true;
+      b.textContent = label;
+      err.textContent = '';
+      p.catch((e) => {
+        err.textContent = (e as Error).message;
+        b.disabled = false;
+        b.textContent = old;
+      });
+    };
+    if (!room) {
+      box.innerHTML = `<div class="hint">Make a room and share the code. Up to ${MAX_PLAYERS} players; bots fill empty spots.</div>`;
+      const row = document.createElement('div');
+      row.className = 'friends-row';
+      const create = document.createElement('button');
+      create.className = 'blob-btn small';
+      create.textContent = 'CREATE ROOM';
+      create.onclick = () => {
+        this.d.sfx.ui();
+        busy(create, this.d.friends.create(), 'CREATING...');
+      };
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.maxLength = 5;
+      input.placeholder = 'CODE';
+      input.className = 'code-input';
+      input.addEventListener('input', () => (input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '')));
+      const join = document.createElement('button');
+      join.className = 'blob-btn small alt';
+      join.textContent = 'JOIN';
+      const doJoin = () => {
+        this.d.sfx.ui();
+        busy(join, this.d.friends.join(input.value), 'JOINING...');
+      };
+      join.onclick = doJoin;
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') doJoin();
+      });
+      row.append(create, input, join);
+      box.append(row, err);
+      return;
+    }
+    const head = document.createElement('div');
+    head.className = 'friends-row';
+    head.innerHTML = `<div class="room-code">Room <b>${room.code}</b></div>`;
+    const copy = document.createElement('button');
+    copy.className = 'chip';
+    copy.textContent = 'COPY';
+    copy.onclick = () => {
+      navigator.clipboard?.writeText(room.code).catch(() => {});
+      copy.textContent = 'COPIED!';
+    };
+    const leave = document.createElement('button');
+    leave.className = 'chip';
+    leave.textContent = 'LEAVE ROOM';
+    leave.onclick = () => {
+      this.d.sfx.ui();
+      this.d.friends.leave();
+    };
+    head.append(copy, leave);
+    const teams = document.createElement('div');
+    teams.className = 'room-teams';
+    for (const t of [0, 1] as Team[]) {
+      const col = document.createElement('div');
+      col.className = `room-team t${t}`;
+      col.innerHTML = `<div class="rt-title">Team ${t + 1}</div>`;
+      const ms = room.members.filter((m) => m.team === t);
+      for (const m of ms) {
+        const el = document.createElement('div');
+        el.className = 'room-member' + (m.id === room.myId ? ' me' : '') + (room.isHost ? ' can-move' : '');
+        el.textContent = `${m.host ? '★ ' : ''}${m.name}`;
+        if (room.isHost) {
+          el.title = 'Click to switch team';
+          el.onclick = () => {
+            this.d.sfx.ui();
+            room.setTeam(m.id, (1 - m.team) as Team);
+          };
+        }
+        col.appendChild(el);
+      }
+      for (let i = ms.length; i < MAX_PLAYERS / 2; i++) {
+        const el = document.createElement('div');
+        el.className = 'room-member bot';
+        el.textContent = 'Bot';
+        col.appendChild(el);
+      }
+      teams.appendChild(col);
+    }
+    box.append(head, teams);
+    if (room.isHost) {
+      const h = document.createElement('div');
+      h.className = 'hint';
+      h.textContent = 'Click a name to switch their team. You pick the mode and stage below.';
+      box.appendChild(h);
+    }
   }
 }
 

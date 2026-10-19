@@ -135,7 +135,7 @@ export class ZoneControl {
     const ev: ZoneEvent[] = [];
     this.curtainMat.map!.offset.x -= dt * 0.25;
     this.checkT -= dt;
-    if (this.checkT <= 0) {
+    if (this.checkT <= 0 && playing) {
       this.checkT = 0.2;
       this.share = this.ink.regionShare(this.region);
     }
@@ -189,6 +189,21 @@ export class ZoneControl {
     this.color.set(this.owner === -1 ? '#ffffff' : this.colorOf(this.owner));
     this.stripMat.color.copy(this.color);
     this.curtainMat.color.copy(this.color);
+  }
+
+  /** Online client: take the host's zone state. Returns capture/loss events for the HUD. */
+  applyNet(count: [number, number], penalty: [number, number], owner: Team | -1, share: [number, number]): ZoneEvent[] {
+    const ev: ZoneEvent[] = [];
+    this.count = count;
+    this.penalty = penalty;
+    this.share = share;
+    if (owner !== this.owner) {
+      if (owner !== -1) ev.push({ kind: 'captured', team: owner });
+      else if (this.owner !== -1) ev.push({ kind: 'lost', team: this.owner });
+      this.owner = owner;
+      this.recolor();
+    }
+    return ev;
   }
 
   /** Display count: count + any penalty still to burn off. */
