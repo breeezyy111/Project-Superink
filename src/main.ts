@@ -41,6 +41,7 @@ async function boot() {
   const minimap = new Minimap($('minimap'));
   const controller = new PlayerController(r.renderer.domElement);
   const profile = loadProfile();
+  r.setQuality(profile.quality);
   const account = new Account();
   const save = () => {
     saveProfile(profile);
@@ -86,6 +87,8 @@ async function boot() {
   let busy = false;
   let lookDirty = false;
   let orbit = 0;
+  let perfT = 0;
+  let perfFrames = 0;
   let lastStageId = '';
 
   const show = (id: string, v: boolean) => $(id).classList.toggle('hidden', !v);
@@ -312,6 +315,20 @@ async function boot() {
     sfx.volume = profile.volume;
     save();
   };
+  const qualityChips = () => {
+    document.querySelectorAll<HTMLElement>('#in-quality .chip').forEach((c) => c.classList.toggle('sel', c.dataset.q === profile.quality));
+  };
+  document.querySelectorAll<HTMLElement>('#in-quality .chip').forEach((c) => {
+    c.onclick = () => {
+      profile.quality = c.dataset.q as Profile['quality'];
+      profile.qualityChosen = true;
+      r.setQuality(profile.quality);
+      qualityChips();
+      sfx.ui();
+      save();
+    };
+  });
+  qualityChips();
   mus.oninput = () => {
     profile.music = parseFloat(mus.value);
     music.volume = profile.music;
@@ -416,7 +433,25 @@ async function boot() {
   const tick = () => {
     requestAnimationFrame(tick);
     timer.update();
-    const dt = Math.min(timer.getDelta(), 1 / 20);
+    const rawDt = timer.getDelta();
+    const dt = Math.min(rawDt, 1 / 20);
+    // auto-tune graphics once if the game is struggling (only until the player picks a level themselves)
+    if ((screen === 'hub' || screen === 'match') && !profile.qualityChosen && r.quality !== 'low' && !document.hidden) {
+      perfT += rawDt;
+      perfFrames++;
+      if (perfT > 5) {
+        const fps = perfFrames / perfT;
+        perfT = 0;
+        perfFrames = 0;
+        if (fps < 38) {
+          profile.quality = r.quality === 'high' ? 'medium' : 'low';
+          r.setQuality(profile.quality);
+          qualityChips();
+          save();
+          toast(`Graphics set to ${profile.quality.toUpperCase()} for smoother play (change it with Esc)`);
+        }
+      }
+    }
     controller.allowLock = (screen === 'match' && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open);
 
     if (screen === 'hub' && hub) {

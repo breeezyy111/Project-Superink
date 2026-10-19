@@ -1,5 +1,6 @@
 import { DEFAULT_LOOK, Look } from './InkfinModel';
 import { STARTER_ITEMS } from './items';
+import type { Quality } from '../engine/Renderer';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -16,6 +17,9 @@ export interface Profile {
   volume: number;
   music: number;
   difficulty: Difficulty;
+  quality: Quality;
+  /** true once the player (not auto-tuning) chose a quality */
+  qualityChosen: boolean;
   stage: string; // stage id or 'random'
 }
 
@@ -35,6 +39,8 @@ export function defaultProfile(): Profile {
     volume: 0.6,
     music: 0.45,
     difficulty: 'normal',
+    quality: 'high',
+    qualityChosen: false,
     stage: 'random',
   };
 }
