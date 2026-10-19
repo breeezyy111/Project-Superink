@@ -3,6 +3,7 @@ import type { StageInfo as MapInfo } from '../world/Stage';
 import { SUBS } from './items';
 import type { Character } from './Character';
 import type { GameCtx } from './types';
+import type { ZoneControl } from './Zones';
 
 /**
  * Simple but lively Turf War bot:
@@ -26,7 +27,7 @@ export class Bot {
   private reaction = 0;
   private jumpT = 0;
 
-  constructor(readonly ch: Character, private ctx: GameCtx, private map: MapInfo, readonly skill = 0.6) {}
+  constructor(readonly ch: Character, private ctx: GameCtx, private map: MapInfo, readonly skill = 0.6, private zone: ZoneControl | null = null) {}
 
   private subT = 2;
   private specialDelay = 1;
@@ -61,11 +62,16 @@ export class Bot {
     const dirZ = ch.team === 0 ? 1 : -1;
     let best: THREE.Vector3 | null = null;
     let bestScore = -Infinity;
+    // Zone Control: most of the time, go fight over the zone (more so when we don't hold it)
+    const z = this.zone;
+    const zoneTries = !z ? 0 : z.owner === ch.team ? (Math.random() < 0.5 ? 6 : 0) : 8;
     for (let i = 0; i < 10; i++) {
+      const inZone = i < zoneTries;
+      const r = inZone ? z!.rect : { minX: b.minX + 2, maxX: b.maxX - 2, minZ: b.minZ + 4, maxZ: b.maxZ - 4 };
       const p = new THREE.Vector3(
-        THREE.MathUtils.lerp(b.minX + 2, b.maxX - 2, Math.random()),
-        6,
-        THREE.MathUtils.lerp(b.minZ + 4, b.maxZ - 4, Math.random()),
+        THREE.MathUtils.lerp(r.minX, r.maxX, Math.random()),
+        inZone ? z!.center.y + 3 : 6,
+        THREE.MathUtils.lerp(r.minZ, r.maxZ, Math.random()),
       );
       const hit = this.ctx.physics.raycast(p, new THREE.Vector3(0, -1, 0), 10);
       if (!hit || hit.point.y > 3.2 || hit.normal.y < 0.6) continue;
@@ -78,6 +84,7 @@ export class Bot {
       score -= Math.abs(dist - 12) * 0.12;
       score += (hit.point.z - ch.pos.z) * dirZ * 0.06;
       score += Math.random() * 1.5;
+      if (inZone && owner !== ch.team + 1) score += 5;
       if (score > bestScore) {
         bestScore = score;
         best = hit.point;

@@ -39,6 +39,15 @@ export class Hud {
   private turfAPct = $('turf-a-pct');
   private turfBPct = $('turf-b-pct');
   private turfT = 0;
+  private turfBar = $('turf-bar');
+  private zoneHud = $('zone-hud');
+  private zcA = $('zc-a');
+  private zcB = $('zc-b');
+  private zpA = $('zp-a');
+  private zpB = $('zp-b');
+  private zIcon = $('zicon');
+  private zsA = $('zs-a');
+  private zsB = $('zs-b');
 
   show(v: boolean) {
     this.root.classList.toggle('hidden', !v);
@@ -60,6 +69,10 @@ export class Hud {
     this.big.classList.add('hidden');
     this.lastIconsKey = '';
     this.turfT = 0;
+    const zones = m.mode === 'zones';
+    this.turfBar.classList.toggle('hidden', zones);
+    this.zoneHud.classList.toggle('hidden', !zones);
+    this.timer.classList.remove('overtime');
   }
 
   bigText(text: string, pink = false, ms = 1200) {
@@ -112,7 +125,8 @@ export class Hud {
 
   update(m: Match) {
     const t = Math.ceil(m.timeLeft);
-    this.timer.textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    this.timer.textContent = m.overtime ? 'OVERTIME' : `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    this.timer.classList.toggle('overtime', m.overtime);
     this.timer.classList.toggle('hurry', m.timeLeft <= 30 && m.phase === 'play');
 
     const key = m.characters.map((c) => (c.alive ? 1 : 0)).join('');
@@ -137,9 +151,22 @@ export class Hud {
     this.wcInk.style.width = `${inkFrac * 100}%`;
     this.crosshair.style.opacity = p.alive && m.phase === 'play' ? (p.swimming ? '0.35' : '1') : '0';
 
+    const z = m.zones;
+    if (z) {
+      this.zcA.textContent = String(Math.ceil(z.count[0]));
+      this.zcB.textContent = String(Math.ceil(z.count[1]));
+      this.zpA.textContent = z.penalty[0] > 0 ? `+${Math.ceil(z.penalty[0])}` : '';
+      this.zpB.textContent = z.penalty[1] > 0 ? `+${Math.ceil(z.penalty[1])}` : '';
+      this.zcA.parentElement!.classList.toggle('held', z.owner === 0);
+      this.zcB.parentElement!.classList.toggle('held', z.owner === 1);
+      this.zIcon.className = `zicon ${z.owner === 0 ? 'a' : z.owner === 1 ? 'b' : ''}`;
+      this.zsA.style.width = `${z.share[0] * 100}%`;
+      this.zsB.style.width = `${z.share[1] * 100}%`;
+    }
+
     // live turf bar: your team fills from the left, theirs from the right
     this.turfT -= 1;
-    if (this.turfT <= 0) {
+    if (!z && this.turfT <= 0) {
       this.turfT = 10;
       const [a, b] = m.ink.turf();
       this.turfA.style.width = `${a * 100}%`;

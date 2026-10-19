@@ -8,7 +8,8 @@ import { Sfx } from './audio/Sfx';
 import { Renderer } from './engine/Renderer';
 import { Hub, HUB_DEF, ZONES } from './game/Hub';
 import { kit } from './game/items';
-import { Match, MatchSummary } from './game/Match';
+import { Match, MatchSummary, MODE_NAMES } from './game/Match';
+import { ZONE_COUNT } from './game/Zones';
 import { PlayerController } from './game/PlayerController';
 import { addXp, defaultProfile, loadProfile, Profile, saveProfile, xpToNext } from './game/profile';
 import { WEAPONS } from './game/weapons';
@@ -18,6 +19,9 @@ import { Minimap } from './ui/Minimap';
 import { Account, friendlyError } from './online/Account';
 import { AccountPanel, AuthUI, toast } from './ui/AuthUI';
 import { ShopUI } from './ui/Shops';
+import { News } from './ui/News';
+import { judgeJellySvg } from './ui/Mascots';
+import { currentRotation, onRotation, ROTATION_BONUS } from './game/rotation';
 import { Stage, StageDef } from './world/Stage';
 import { stageById, STAGES } from './world/stages';
 
@@ -118,7 +122,9 @@ async function boot() {
   const pickStage = () => {
     if (params.get('stage')) return stageById(params.get('stage')!);
     if (profile.stage !== 'random') return stageById(profile.stage);
-    const pool = STAGES.filter((s) => s.id !== lastStageId);
+    // Random picks one of the stages on rotation for this mode
+    const rot = currentRotation()[profile.mode];
+    const pool = rot.filter((s) => s.id !== lastStageId);
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
@@ -130,7 +136,7 @@ async function boot() {
       onHitMarker: () => hud.hitMarker(),
       onPhase: (p) => {
         if (demo || screen !== 'match') return;
-        if (p === 'countdown') hud.bigText('READY?', false, 2600);
+        if (p === 'countdown') hud.bigText(match?.mode === 'zones' ? 'ZONE CONTROL!' : 'READY?', false, 2600);
         if (p === 'play') hud.bigText('GO!', true, 900);
         if (p === 'finish') {
           hud.bigText('GAME!', false, 0);
@@ -138,7 +144,23 @@ async function boot() {
         }
         if (p === 'done') showResults();
       },
-    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty });
+      onZone: (e) => {
+        if (demo || screen !== 'match') return;
+        const ours = e.team === 0;
+        if (e.kind === 'captured') {
+          hud.bigText(ours ? 'WE GOT THE ZONE!' : 'THEY TOOK THE ZONE!', !ours, 1600);
+          if (ours) sfx.specialReady();
+          else sfx.denied();
+        } else if (e.kind === 'lost') {
+          hud.pushFeed(ours ? 'We lost the zone!' : 'They lost the zone!', ours ? 'bad' : 'good');
+        } else if (ours) hud.pushFeed('Our zone is under attack!', 'bad');
+      },
+      onOvertime: () => {
+        if (demo || screen !== 'match') return;
+        hud.bigText('OVERTIME!', true, 1600);
+        sfx.whistle();
+      },
+    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty, mode: params.get('mode') === 'zones' ? 'zones' : demo ? 'turf' : profile.mode });
     hud.setup(match);
     if (!demo) minimap.setup(match);
   };
@@ -232,8 +254,24 @@ async function boot() {
     music.play('tidepool');
     loading(false);
     busy = false;
+    // Splashburg News when the stages changed since you last watched
+    if (news.isNew(profile.newsSlot) && !params.has('nonews')) {
+      await news.show();
+      profile.newsSlot = news.slot();
+      save();
+      return;
+    }
     if (lock) controller.requestLock();
   };
+  const news = new News(sfx);
+  $('btn-news').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (screen !== 'hub' || shop.open || news.open) return;
+    controller.releaseLock();
+    await news.show();
+    profile.newsSlot = news.slot();
+    save();
+  });
 
   const shop = new ShopUI({
     profile,
@@ -363,9 +401,13 @@ async function boot() {
     const sum: MatchSummary = m.summary();
     const [a, b] = sum.turf;
     show('results', true);
-    $('res-stage').textContent = m.stage.def.name;
+    $('res-stage').textContent = `${MODE_NAMES[m.mode]} • ${m.stage.def.name}`;
+    // Judge Jelly looks back and forth while the bars fill, then raises the winner's flag
+    const judge = $('res-judge');
+    judge.className = 'judge thinking';
+    judge.innerHTML = judgeJellySvg(m.pair.alpha, m.pair.bravo) + '<div class="judge-say"></div>';
     const winner = $('res-winner');
-    winner.textContent = sum.win ? 'YOUR TEAM WINS!' : 'DEFEAT...';
+    winner.textContent = sum.ko ? (sum.win ? 'KNOCKOUT! YOU WIN!' : 'KNOCKED OUT...') : sum.win ? 'YOUR TEAM WINS!' : 'DEFEAT...';
     winner.style.color = m.colorOf(sum.win ? 0 : 1);
     const fa = $('res-a'), fb = $('res-b');
     fa.style.background = m.pair.alpha;
@@ -376,14 +418,18 @@ async function boot() {
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         // bars show each team's share of the painted turf; labels show map coverage
-        const total = Math.max(1e-6, a + b);
-        fa.style.width = `${Math.max(4, (a / total) * 100)}%`;
-        fb.style.width = `${Math.max(4, (b / total) * 100)}%`;
+        // (Zone Control: how far each team counted down)
+        const zc = sum.zoneCount;
+        const [va, vb] = zc ? [ZONE_COUNT - zc[0], ZONE_COUNT - zc[1]] : [a, b];
+        const total = Math.max(1e-6, va + vb);
+        fa.style.width = `${Math.max(4, (va / total) * 100)}%`;
+        fb.style.width = `${Math.max(4, (vb / total) * 100)}%`;
       }),
     );
 
     // rewards
-    const coins = Math.round(sum.paintedM2 * 3 + (sum.win ? 400 : 120) + sum.splats * 30);
+    const bonus = onRotation(m.mode, m.stage.def.id);
+    const coins = Math.round((sum.paintedM2 * 3 + (sum.win ? 400 : 120) + sum.splats * 30) * (bonus ? 1 + ROTATION_BONUS : 1));
     const xp = Math.round(sum.paintedM2 * 2 + (sum.win ? 300 : 100));
     profile.coins += coins;
     const levels = addXp(profile, xp);
@@ -391,10 +437,14 @@ async function boot() {
     const rw = $('res-rewards');
     rw.innerHTML = '';
     setTimeout(() => {
-      $('res-a-pct').textContent = `${(a * 100).toFixed(1)}%`;
-      $('res-b-pct').textContent = `${(b * 100).toFixed(1)}%`;
+      const zc = sum.zoneCount;
+      $('res-a-pct').textContent = zc ? `${zc[0]} left` : `${(a * 100).toFixed(1)}%`;
+      $('res-b-pct').textContent = zc ? `${zc[1]} left` : `${(b * 100).toFixed(1)}%`;
       sfx.whistle();
+      judge.className = `judge decided ${sum.win ? 'win-a' : 'win-b'}`;
+      (judge.querySelector('.judge-say') as HTMLElement).textContent = sum.win ? (sum.ko ? 'Knockout!' : 'Your team wins!') : 'The other team wins!';
       const items = [`${Math.round(sum.paintedM2)}p turf`, `<span class="coin-ico"></span>+${coins}`, `+${xp} XP`];
+      if (bonus) items.push('★ Rotation bonus');
       items.forEach((t, i) => {
         const el = document.createElement('div');
         el.className = 'rw';
@@ -452,10 +502,10 @@ async function boot() {
         }
       }
     }
-    controller.allowLock = (screen === 'match' && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open);
+    controller.allowLock = (screen === 'match' && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open && !news.open);
 
     if (screen === 'hub' && hub) {
-      const overlay = auth.open || accountPanel.open;
+      const overlay = auth.open || accountPanel.open || news.open;
       if (overlay) controller.consume('KeyE');
       if (!overlay && !shop.open && hub.nearZone && controller.consume('KeyE')) {
         hub.inShop = true;

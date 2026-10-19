@@ -11,6 +11,10 @@ import { gearIn, Kit, KITS } from './items';
 import type { PlayerController } from './PlayerController';
 import type { Difficulty } from './profile';
 import { InkWorld } from './World';
+import { ZoneControl, ZoneEvent } from './Zones';
+
+export type Mode = 'turf' | 'zones';
+export const MODE_NAMES: Record<Mode, string> = { turf: 'Turf War', zones: 'Zone Control' };
 
 export type Phase = 'intro' | 'countdown' | 'play' | 'finish' | 'done';
 
@@ -20,10 +24,16 @@ export interface MatchEvents {
   onPlayerRespawn(): void;
   onHitMarker(): void;
   onPhase(p: Phase): void;
+  onZone?(e: ZoneEvent): void;
+  onOvertime?(): void;
 }
 
 export interface MatchSummary {
+  mode: Mode;
   win: boolean;
+  /** Zone Control: counts left per team, and whether it ended by knockout */
+  zoneCount: [number, number] | null;
+  ko: boolean;
   turf: [number, number];
   paintedM2: number;
   splats: number;
@@ -57,6 +67,11 @@ export class Match extends InkWorld {
   phase: Phase = 'intro';
   timeLeft = MATCH_SECONDS;
   phaseT = 0;
+  readonly mode: Mode;
+  zones: ZoneControl | null = null;
+  overtime = false;
+  ko = false;
+  private overtimeT = 0;
   private lastBeep = 99;
 
   constructor(
@@ -65,12 +80,14 @@ export class Match extends InkWorld {
     sfx: Sfx,
     private controller: PlayerController | null,
     private events: MatchEvents,
-    opts: { look: Look; kit: Kit; name: string; demo?: boolean; difficulty: Difficulty },
+    opts: { look: Look; kit: Kit; name: string; demo?: boolean; difficulty: Difficulty; mode?: Mode },
   ) {
     super(r.scene, stage, sfx);
+    this.mode = opts.mode ?? 'turf';
     this.pair = INK_PAIRS[Math.floor(Math.random() * INK_PAIRS.length)];
     this.ink.setColors(this.pair.alpha, this.pair.bravo);
     this.ink.reset();
+    if (this.mode === 'zones') this.zones = new ZoneControl(r.scene, stage.def, this.ink, this.physics, (t) => this.colorOf(t));
     this.projectiles.setColors(this.pair.alpha, this.pair.bravo);
 
     const names = [...BOT_NAMES].sort(() => Math.random() - 0.5);
@@ -84,7 +101,7 @@ export class Match extends InkWorld {
         if (isPlayer) this.player = ch;
         // allies are a touch weaker than enemies on each difficulty, so you matter
         const skill = isPlayer ? 0.8 : THREE.MathUtils.lerp(lo, hi, Math.random()) * (t === 0 ? 0.9 : 1);
-        if (!isPlayer || opts.demo) this.bots.push(new Bot(ch, this, stage.info, skill));
+        if (!isPlayer || opts.demo) this.bots.push(new Bot(ch, this, stage.info, skill, this.zones));
       }
     }
     this.spawnAll();
@@ -152,13 +169,28 @@ export class Match extends InkWorld {
         this.setPhase('play');
       }
     }
+    if (this.zones) for (const e of this.zones.update(dt, playing)) this.events.onZone?.(e);
     if (playing) {
       const before = this.timeLeft;
       this.timeLeft = Math.max(0, this.timeLeft - dt);
       if (Math.ceil(before) !== Math.ceil(this.timeLeft) && this.timeLeft <= 10 && this.timeLeft > 0) this.sfx.beep(false);
-      if (this.timeLeft <= 0) {
+      const z = this.zones;
+      if (z && (z.count[0] <= 0 || z.count[1] <= 0)) {
+        this.ko = true;
         this.sfx.whistle();
         this.setPhase('finish');
+      } else if (this.timeLeft <= 0) {
+        // Overtime: the team holding the zone is behind (or tied) and gets a chance to catch up
+        if (z && z.owner !== -1 && z.leader() !== z.owner && this.overtimeT < 60) {
+          if (!this.overtime) {
+            this.overtime = true;
+            this.events.onOvertime?.();
+          }
+          this.overtimeT += dt;
+        } else {
+          this.sfx.whistle();
+          this.setPhase('finish');
+        }
       }
     }
     if (this.phase === 'finish' && this.phaseT > 2.6) this.setPhase('done');
@@ -197,15 +229,36 @@ export class Match extends InkWorld {
     this.simulate(dt, !frozen);
   }
 
+  /** Winning team (Turf War: more turf. Zone Control: lower count, then more of the zone). */
+  winner(): Team {
+    const turf = this.ink.turf();
+    const z = this.zones;
+    if (z) {
+      const l = z.leader();
+      if (l !== null) return l;
+      if (z.share[0] !== z.share[1]) return z.share[0] > z.share[1] ? 0 : 1;
+    }
+    return turf[0] >= turf[1] ? 0 : 1;
+  }
+
   summary(): MatchSummary {
     const turf = this.ink.turf();
+    const z = this.zones;
     return {
-      win: turf[0] >= turf[1],
+      mode: this.mode,
+      zoneCount: z ? [z.shown(0), z.shown(1)] : null,
+      ko: this.ko,
+      win: this.winner() === 0,
       turf,
       paintedM2: this.player.painted / 9,
       splats: this.player.splats,
       deaths: this.player.deaths,
     };
+  }
+
+  dispose() {
+    this.zones?.dispose();
+    super.dispose();
   }
 
   /** Camera used when the player isn't driving (intro, splatted). */

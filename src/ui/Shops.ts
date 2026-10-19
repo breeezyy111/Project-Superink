@@ -3,6 +3,8 @@ import { EYE_COLORS, HAIR_NAMES, Look, MARK_NAMES, SKIN_TONES } from '../game/In
 import { gear, GearItem, gearIn, kit, Kit, KITS, Slot, SPECIALS, SUBS } from '../game/items';
 import type { Difficulty, Profile } from '../game/profile';
 import type { ZoneId } from '../game/Hub';
+import { Mode, MODE_NAMES } from '../game/Match';
+import { currentRotation, ROTATION_BONUS } from '../game/rotation';
 import { WEAPONS } from '../game/weapons';
 import { STAGES } from '../world/stages';
 import type { LockerStage } from './LockerStage';
@@ -26,7 +28,7 @@ const INFO: Record<ZoneId, { tag: string; name: string; quotes: string[] }> = {
   threads: { tag: 'GEAR', name: 'Frill Threads', quotes: ['"Fresh fits for fresh fins, darling." — Mimi', '"Try it on! The mirror never lies." — Mimi'] },
   studio: { tag: 'SALON', name: 'Fin Studio', quotes: ['"Sit down, let\'s fluff those frills." — Coco', '"Stripes are SO in this season." — Coco'] },
   locker: { tag: 'INVENTORY', name: 'Your Locker', quotes: ['Everything you own, all in one place.'] },
-  tower: { tag: 'LOBBY', name: 'Turf Tower', quotes: ['"Four on four. Three minutes. Most turf wins!" — Judge Jelly'] },
+  tower: { tag: 'LOBBY', name: 'Turf Tower', quotes: ['"Four on four. Three minutes. Most turf wins!" — Judge Jelly', '"Hold the zone, hold your nerve!" — Judge Jelly'] },
 };
 
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
@@ -322,16 +324,42 @@ export class ShopUI {
     };
     body.appendChild(go);
 
+    const modes = document.createElement('div');
+    modes.className = 'card-list';
+    const MODE_INFO: { id: Mode; blurb: string }[] = [
+      { id: 'turf', blurb: 'Paint the most floor in 3 minutes.' },
+      { id: 'zones', blurb: 'Take the zone in the middle and hold it. Your count drops while you own it. First to 0 wins!' },
+    ];
+    for (const o of MODE_INFO) {
+      const c = document.createElement('div');
+      c.className = 'stage-card' + (p.mode === o.id ? ' sel' : '');
+      c.innerHTML = `<div class="sn">${MODE_NAMES[o.id]}</div><div class="sb">${o.blurb}</div>`;
+      c.onclick = () => {
+        p.mode = o.id;
+        this.d.save();
+        this.d.sfx.ui();
+        this.render();
+      };
+      modes.appendChild(c);
+    }
+    const f0 = document.createElement('div');
+    f0.className = 'field';
+    f0.innerHTML = '<span>Mode</span>';
+    f0.appendChild(modes);
+    body.appendChild(f0);
+
+    const rot = currentRotation()[p.mode];
     const stagesEl = document.createElement('div');
     stagesEl.className = 'card-list';
     const options: { id: string; name: string; blurb: string }[] = [
-      { id: 'random', name: 'Random Stage', blurb: 'Let the Turf Tower pick for you.' },
+      { id: 'random', name: 'Random Stage', blurb: 'Picks one of the stages on rotation for you.' },
       ...STAGES.map((s) => ({ id: s.id, name: s.name, blurb: s.blurb })),
     ];
     for (const o of options) {
       const c = document.createElement('div');
       c.className = 'stage-card' + (p.stage === o.id ? ' sel' : '');
-      c.innerHTML = `<div class="sn">${o.name}</div><div class="sb">${o.blurb}</div>`;
+      const star = rot.some((st) => st.id === o.id) ? `<span class="rot-badge">★ ON ROTATION +${ROTATION_BONUS * 100}%</span>` : '';
+      c.innerHTML = `<div class="sn">${o.name}${star}</div><div class="sb">${o.blurb}</div>`;
       c.onclick = () => {
         p.stage = o.id;
         this.d.save();

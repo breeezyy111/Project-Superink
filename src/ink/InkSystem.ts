@@ -97,6 +97,8 @@ export class InkFace {
   }
 }
 
+export type InkRegion = { face: InkFace; idx: Uint32Array }[];
+
 export interface SplatCircle {
   x: number; // world position
   y: number;
@@ -349,6 +351,40 @@ export class InkSystem {
       f.dirty = false;
       if (++n >= budget) break;
     }
+  }
+
+  /** Floor cells whose centers fall inside a world-space box (used for zones). */
+  region(minX: number, maxX: number, minZ: number, maxZ: number, minY: number, maxY: number): InkRegion {
+    const parts: InkRegion = [];
+    const p = new THREE.Vector3();
+    for (const f of this.faces) {
+      if (!f.isFloor) continue;
+      const idx: number[] = [];
+      const cw = f.w / f.cols, ch = f.h / f.rows;
+      for (let r = 0; r < f.rows; r++) {
+        for (let c = 0; c < f.cols; c++) {
+          p.copy(f.wOrigin).addScaledVector(f.wU, (c + 0.5) * cw).addScaledVector(f.wV, (r + 0.5) * ch);
+          if (p.x >= minX && p.x <= maxX && p.z >= minZ && p.z <= maxZ && p.y >= minY && p.y <= maxY) idx.push(r * f.cols + c);
+        }
+      }
+      if (idx.length) parts.push({ face: f, idx: Uint32Array.from(idx) });
+    }
+    return parts;
+  }
+
+  /** Share of a region's cells owned by each team, 0..1. */
+  regionShare(region: InkRegion): [number, number] {
+    let a = 0, b = 0, n = 0;
+    for (const { face, idx } of region) {
+      for (let i = 0; i < idx.length; i++) {
+        const o = face.owner[idx[i]];
+        if (o === 1) a++;
+        else if (o === 2) b++;
+      }
+      n += idx.length;
+    }
+    n = Math.max(1, n);
+    return [a / n, b / n];
   }
 
   turf(): [number, number] {

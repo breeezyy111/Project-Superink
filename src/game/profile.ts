@@ -1,6 +1,7 @@
 import { DEFAULT_LOOK, Look } from './InkfinModel';
 import { STARTER_ITEMS } from './items';
 import type { Quality } from '../engine/Renderer';
+import type { Mode } from './Match';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -21,6 +22,9 @@ export interface Profile {
   /** true once the player (not auto-tuning) chose a quality */
   qualityChosen: boolean;
   stage: string; // stage id or 'random'
+  mode: Mode;
+  /** stage rotation slot of the last Splashburg News watched */
+  newsSlot: number;
 }
 
 const KEY = 'superink.profile.v2';
@@ -42,6 +46,8 @@ export function defaultProfile(): Profile {
     quality: 'high',
     qualityChosen: false,
     stage: 'random',
+    mode: 'turf',
+    newsSlot: -1,
   };
 }
 
