@@ -34,6 +34,11 @@ export class Hud {
   private sgFill = $('sg-fill') as unknown as SVGCircleElement;
   private sgLabel = $('sg-label');
   private sg = $('special-gauge');
+  private turfA = $('turf-a');
+  private turfB = $('turf-b');
+  private turfAPct = $('turf-a-pct');
+  private turfBPct = $('turf-b-pct');
+  private turfT = 0;
 
   show(v: boolean) {
     this.root.classList.toggle('hidden', !v);
@@ -54,6 +59,7 @@ export class Hud {
     this.splatted.classList.add('hidden');
     this.big.classList.add('hidden');
     this.lastIconsKey = '';
+    this.turfT = 0;
   }
 
   bigText(text: string, pink = false, ms = 1200) {
@@ -130,6 +136,17 @@ export class Hud {
     this.inkLow.classList.toggle('hidden', !(inkFrac < 0.12 && p.alive && m.phase === 'play'));
     this.wcInk.style.width = `${inkFrac * 100}%`;
     this.crosshair.style.opacity = p.alive && m.phase === 'play' ? (p.swimming ? '0.35' : '1') : '0';
+
+    // live turf bar: your team fills from the left, theirs from the right
+    this.turfT -= 1;
+    if (this.turfT <= 0) {
+      this.turfT = 10;
+      const [a, b] = m.ink.turf();
+      this.turfA.style.width = `${a * 100}%`;
+      this.turfB.style.width = `${b * 100}%`;
+      this.turfAPct.textContent = `${(a * 100).toFixed(1)}%`;
+      this.turfBPct.textContent = `${(b * 100).toFixed(1)}%`;
+    }
 
     const sp = p.specialT > 0 ? 0 : p.special;
     this.sgFill.style.strokeDashoffset = String(263.9 * (1 - sp / 100));

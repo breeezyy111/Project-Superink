@@ -435,3 +435,37 @@ kbd {
   .ink-field input { font-size: 16px; padding: 7px 12px; }
   .auth-tabs { margin-bottom: 10px; }
 }
+
+/* ---------- live turf bar, minimap, exit button ---------- */
+.turf-bar {
+  position: absolute; top: 76px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; width: min(460px, 70vw);
+}
+.turf-track {
+  position: relative; flex: 1; height: 16px; border-radius: 10px; overflow: hidden;
+  background: rgba(21,18,28,0.75); border: 3px solid var(--dark); box-shadow: 0 4px 0 rgba(0,0,0,0.3);
+}
+.turf-fill { position: absolute; top: 0; bottom: 0; width: 0; transition: width 0.4s ease-out; }
+.turf-fill.a { left: 0; background: var(--ink-a); border-radius: 0 8px 8px 0; }
+.turf-fill.b { right: 0; background: var(--ink-b); border-radius: 8px 0 0 8px; }
+.turf-pct { font-family: var(--display); font-size: 17px; min-width: 52px; -webkit-text-stroke: 5px var(--dark); paint-order: stroke fill; }
+.turf-pct.a { color: var(--ink-a); text-align: right; }
+.turf-pct.b { color: var(--ink-b); }
+
+.minimap {
+  position: absolute; right: 18px; top: 16px; padding: 6px; border-radius: 16px;
+  background: rgba(21,18,28,0.82); border: 3px solid var(--dark); box-shadow: 0 5px 0 rgba(0,0,0,0.35);
+}
+.minimap canvas { display: block; border-radius: 10px; }
+#hud .special-gauge { right: auto; left: 18px; top: 66px; }
+#hud .special-gauge .sg-name { left: 0; transform: none; }
+
+.exit-btn {
+  position: absolute; left: 18px; top: 16px; pointer-events: auto; cursor: pointer;
+  font-family: var(--display); font-size: 16px; color: var(--paper); background: var(--dark);
+  border: 3px solid #3a3350; border-radius: 999px; padding: 6px 14px 4px; display: flex; gap: 8px; align-items: center;
+  box-shadow: 0 4px 0 rgba(0,0,0,0.35);
+}
+.exit-btn:hover { background: var(--pink); border-color: var(--dark); }
+.exit-btn .x { font-size: 14px; }
+.exit-btn kbd { font-size: 12px; }

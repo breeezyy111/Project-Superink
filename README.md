@@ -12,6 +12,12 @@ npm run dev        # opens on http://localhost:5173
 npm run build      # type-check + production build into dist/
 ```
 
+## Play online (GitHub Pages)
+
+`.github/workflows/pages.yml` builds the game and publishes it to GitHub Pages on every push to `main`
+(or run it by hand from the Actions tab). One-time setup: repo **Settings → Pages → Source: GitHub Actions**.
+The site is then at `https://breeezyy111.github.io/Project-Superink/`.
+
 ## Accounts (PlayFab)
 
 When you press PLAY, an optional (but recommended) **Splashburg ID** page lets you sign in or sign up, or **Play as Guest**.
@@ -36,7 +42,7 @@ If PlayFab can't be reached, the game still runs and saves progress in the brows
 | Sub weapon | E or middle click |
 | Special (when the gauge is full) | Q |
 | Enter a shop (in Splashburg) | E |
-| Pause / settings | Esc |
+| Pause / settings / exit match | Esc |
 
 ## How it plays
 

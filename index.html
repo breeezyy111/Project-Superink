@@ -115,6 +115,13 @@
           <div id="timer" class="timer">3:00</div>
           <div id="team-b" class="team-icons"></div>
         </div>
+        <div class="turf-bar" id="turf-bar">
+          <span id="turf-a-pct" class="turf-pct a">0%</span>
+          <div class="turf-track"><div id="turf-a" class="turf-fill a"></div><div id="turf-b" class="turf-fill b"></div></div>
+          <span id="turf-b-pct" class="turf-pct b">0%</span>
+        </div>
+        <div id="minimap" class="minimap hidden"><canvas></canvas></div>
+        <button id="btn-exit" class="exit-btn" title="Exit match"><span class="x">✕</span> EXIT <kbd>Esc</kbd></button>
         <div id="special-gauge" class="special-gauge">
           <svg viewBox="0 0 100 100"><circle class="sg-bg" cx="50" cy="50" r="42" /><circle id="sg-fill" class="sg-fill" cx="50" cy="50" r="42" /></svg>
           <div id="sg-label" class="sg-label">0%</div>
@@ -155,7 +162,8 @@
           <label class="field row"><span>Sound effects</span><input id="in-vol" type="range" min="0" max="1" step="0.05" value="0.6" /></label>
           <label class="field row"><span>Music</span><input id="in-music" type="range" min="0" max="1" step="0.05" value="0.45" /></label>
           <button id="btn-resume" class="blob-btn">RESUME</button>
-          <button id="btn-quit" class="blob-btn alt">BACK TO SPLASHBURG</button>
+          <button id="btn-quit" class="blob-btn alt">EXIT MATCH</button>
+          <div class="hint" style="text-align:center">Leaving early skips the match rewards.</div>
         </div>
       </section>
 

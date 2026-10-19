@@ -14,6 +14,7 @@ import { addXp, defaultProfile, loadProfile, Profile, saveProfile, xpToNext } fr
 import { WEAPONS } from './game/weapons';
 import { CUTTLE_SVG, Hud } from './ui/Hud';
 import { LockerStage } from './ui/LockerStage';
+import { Minimap } from './ui/Minimap';
 import { Account, friendlyError } from './online/Account';
 import { AccountPanel, AuthUI, toast } from './ui/AuthUI';
 import { ShopUI } from './ui/Shops';
@@ -37,6 +38,7 @@ async function boot() {
   const sfx = new Sfx();
   const music = new Music();
   const hud = new Hud();
+  const minimap = new Minimap($('minimap'));
   const controller = new PlayerController(r.renderer.domElement);
   const profile = loadProfile();
   const account = new Account();
@@ -94,6 +96,7 @@ async function boot() {
   };
 
   const teardown = () => {
+    minimap.hide();
     match?.dispose();
     match = null;
     hub?.dispose();
@@ -134,6 +137,7 @@ async function boot() {
       },
     }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty });
     hud.setup(match);
+    if (!demo) minimap.setup(match);
   };
 
   const hideAll = () => {
@@ -324,7 +328,13 @@ async function boot() {
     show('pause', false);
     controller.requestLock();
   });
-  $('btn-quit').addEventListener('click', () => goHub(true));
+  const exitMatch = () => {
+    if (screen !== 'match') return;
+    sfx.ui();
+    goHub(true);
+  };
+  $('btn-quit').addEventListener('click', exitMatch);
+  $('btn-exit').addEventListener('click', exitMatch);
 
   // ---------- results ----------
   const showResults = () => {
@@ -439,6 +449,7 @@ async function boot() {
       if (params.has('follow') && screen === 'match') {
         controller.follow(dt, match.player, r.camera, match.physics);
         hud.update(match);
+        minimap.update(dt);
       } else if (screen === 'title' || (params.has('demo') && screen === 'match')) {
         orbit += dt * 0.06;
         const info = match.stage.info.bounds;
@@ -448,6 +459,7 @@ async function boot() {
       } else if (screen === 'match' || screen === 'results') {
         match.spectate(dt, r.camera);
         hud.update(match);
+        minimap.update(dt);
         hud.setClickLock(screen === 'match' && match.phase === 'play' && !controller.locked && !paused);
       }
     }
