@@ -156,8 +156,9 @@ export class Renderer {
     composer.setSize(w, h);
     composer.addPass(new RenderPass(this.scene, this.camera));
     composer.addPass(new OutputPass());
-    // glow only on the brightest highlights (wet ink shine, lamps), after tone mapping
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.35, 0.93));
+    // glow only on the very brightest highlights (wet ink shine, lamps), after tone mapping.
+    // Keep the threshold near 1: a lower one makes big bright floors glow and wash out the screen.
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.28, 0.3, 0.985));
     composer.addPass(new ShaderPass(GradeShader));
     this.composer = composer;
   }
