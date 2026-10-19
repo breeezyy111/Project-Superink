@@ -125,3 +125,8 @@ playfab/               CloudScript (guest names) and setup guide
 - Other modes (Splat Zones-style), online multiplayer
 - Performance pass (merge character meshes)
 - An Octo Expansion-style story mode (later!)
+
+## License
+
+Copyright © 2026 Max Sabato. All rights reserved. See [LICENSE](LICENSE).
+Not affiliated with Nintendo.
