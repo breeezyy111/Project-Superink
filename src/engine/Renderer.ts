@@ -1,5 +1,28 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+
+export type Quality = 'low' | 'medium' | 'high';
+
+/** Final touch: a little extra saturation/contrast and a soft vignette, applied after tone mapping. */
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, saturation: { value: 1.12 }, contrast: { value: 1.05 }, vignette: { value: 0.28 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float saturation; uniform float contrast; uniform float vignette; varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      c.rgb = mix(vec3(l), c.rgb, saturation);
+      c.rgb = (c.rgb - 0.5) * contrast + 0.5;
+      vec2 d = vUv - 0.5;
+      c.rgb *= 1.0 - vignette * smoothstep(0.25, 0.85, dot(d, d) * 2.2);
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), c.a);
+    }`,
+};
 
 /** Renderer, scene, sky and lighting tuned for a bright, glossy, toy-like look. */
 export class Renderer {
@@ -7,6 +30,8 @@ export class Renderer {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
   sun: THREE.DirectionalLight;
+  quality: Quality = 'high';
+  private composer: EffectComposer | null = null;
 
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -109,13 +134,43 @@ export class Renderer {
     return sky;
   }
 
+  /** Pick a graphics level. Low = plain render; Medium = glow + color grade; High = + MSAA, full-res, sharper shadows. */
+  setQuality(q: Quality) {
+    this.quality = q;
+    this.composer?.dispose();
+    this.composer = null;
+    const ratio = q === 'low' ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, q === 'high' ? 2 : 1.5);
+    this.renderer.setPixelRatio(ratio);
+    const shadow = q === 'low' ? 1024 : q === 'medium' ? 2048 : 4096;
+    if (this.sun.shadow.mapSize.x !== shadow) {
+      this.sun.shadow.mapSize.set(shadow, shadow);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    if (q === 'low') return;
+
+    const w = window.innerWidth, h = window.innerHeight;
+    const target = new THREE.WebGLRenderTarget(w * ratio, h * ratio, { type: THREE.HalfFloatType, samples: q === 'high' ? 4 : 0 });
+    const composer = new EffectComposer(this.renderer, target);
+    composer.setPixelRatio(ratio);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(this.scene, this.camera));
+    composer.addPass(new OutputPass());
+    // glow only on the brightest highlights (wet ink shine, lamps), after tone mapping
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.35, 0.93));
+    composer.addPass(new ShaderPass(GradeShader));
+    this.composer = composer;
+  }
+
   resize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.composer?.setSize(window.innerWidth, window.innerHeight);
   }
 
   render() {
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 }

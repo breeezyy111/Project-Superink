@@ -48,6 +48,8 @@ export interface StageDef {
   /** half-size of the playable area */
   half: { x: number; z: number };
   killY?: number;
+  /** Zone Control area (center + size); defaults to a 10 x 8 m box in the middle */
+  zone?: { x: number; z: number; w: number; d: number };
   /** false for non-symmetric places like the hub */
   mirrored?: boolean;
   build(b: StageBuilder): void;

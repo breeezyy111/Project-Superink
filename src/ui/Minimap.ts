@@ -63,6 +63,8 @@ export class Minimap {
     this.canvas.height = Math.round(ch * dpr);
 
     this.colors = [hexRgb(m.pair.alpha), hexRgb(m.pair.bravo)];
+    // your base is always at the bottom
+    this.canvas.style.transform = m.player.team === 1 ? 'rotate(180deg)' : '';
 
     // floor faces, lowest first so higher platforms draw on top
     const floors = m.ink.faces.filter((f) => f.isFloor).sort((a, b2) => a.wOrigin.y - b2.wOrigin.y);
@@ -135,6 +137,17 @@ export class Minimap {
     g.drawImage(this.ink, 0, 0, this.canvas.width, this.canvas.height);
 
     const k = this.canvas.width / this.w;
+    // Zone Control: outline the zone in the holding team's color
+    const z = m.zones;
+    if (z) {
+      const [x1, y1] = this.screen(z.rect.minX, z.rect.minZ);
+      const [x2, y2] = this.screen(z.rect.maxX, z.rect.maxZ);
+      g.lineWidth = 2.2 * k;
+      g.setLineDash([4 * k, 3 * k]);
+      g.strokeStyle = z.owner === -1 ? '#ffffff' : m.colorOf(z.owner);
+      g.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+      g.setLineDash([]);
+    }
     // teammates as dots, you as an arrow
     for (const c of m.characters) {
       if (c.team !== m.player.team || !c.alive) continue;

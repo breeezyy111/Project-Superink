@@ -226,6 +226,13 @@ export class Sfx {
     this.tone(t + 0.08, 0.25, 1319, 1319, 0.15, 'square');
   }
 
+  /** talking blip for dialogue */
+  blip(pitch = 1) {
+    if (!this.ctx) return;
+    const f = (520 + Math.random() * 160) * pitch;
+    this.tone(this.now, 0.05, f, f * 1.1, 0.06, 'square');
+  }
+
   respawn() {
     if (!this.ctx) return;
     const t = this.now;

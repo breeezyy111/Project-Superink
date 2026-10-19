@@ -450,11 +450,30 @@ export class KitState {
   private prevSub = false;
   private prevSpecial = false;
   private jetCd = 0;
+  /** online: how many subs/specials this character has used (sent over the network) */
+  subUses = 0;
+  specialUses = 0;
 
   constructor(readonly kit: Kit) {}
 
   get subCost() {
     return SUBS[this.kit.sub].cost;
+  }
+
+  /** online: replay a sub someone else threw */
+  forceSub(ch: Character, ctx: GameCtx) {
+    if (!ch.alive) return;
+    this.subUses++;
+    ctx.gadgets.throwSub(ch, this.kit.sub, ctx);
+  }
+
+  /** start the special (also used online to replay someone else's) */
+  forceSpecial(ch: Character, ctx: GameCtx) {
+    if (!ch.alive) return;
+    this.specialUses++;
+    ch.special = 0;
+    ch.specialT = SPECIAL_DURATION[this.kit.special];
+    ctx.gadgets.activateSpecial(ch, this.kit.special, ctx);
   }
 
   update(dt: number, ch: Character, ctx: GameCtx) {
@@ -472,14 +491,11 @@ export class KitState {
       if (ch.ink >= this.subCost) {
         ch.ink -= this.subCost;
         this.subCd = 0.5;
+        this.subUses++;
         ctx.gadgets.throwSub(ch, this.kit.sub, ctx);
       } else if (ch.isPlayer) ctx.sfx.denied();
     }
-    if (specialPressed && ch.special >= 100 && ch.specialT <= 0) {
-      ch.special = 0;
-      ch.specialT = SPECIAL_DURATION[this.kit.special];
-      ctx.gadgets.activateSpecial(ch, this.kit.special, ctx);
-    }
+    if (specialPressed && ch.special >= 100 && ch.specialT <= 0) this.forceSpecial(ch, ctx);
     // Turbo Jet: the main weapon becomes an explosive launcher
     if (ch.jetT > 0 && ch.input.fire && this.jetCd <= 0) {
       this.jetCd = 0.6;

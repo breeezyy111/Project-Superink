@@ -79,6 +79,9 @@ export const KITS: Kit[] = [
   { id: 'kit_roller', main: 'roller', sub: 'slide', special: 'tsunami', price: 1200, level: 2 },
   { id: 'kit_charger', main: 'charger', sub: 'mine', special: 'shield', price: 1800, level: 3 },
   { id: 'kit_boom', main: 'blaster', sub: 'pop', special: 'jet', price: 2400, level: 4 },
+  { id: 'kit_dualies', main: 'dualies', sub: 'slide', special: 'jet', price: 2000, level: 3 },
+  { id: 'kit_bucket', main: 'slosher', sub: 'burst', special: 'tsunami', price: 2600, level: 4 },
+  { id: 'kit_splatling', main: 'splatling', sub: 'mine', special: 'squall', price: 3000, level: 5 },
 ];
 
 export function kit(id: string): Kit {

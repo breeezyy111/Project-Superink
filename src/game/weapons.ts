@@ -3,7 +3,7 @@ import { InkSystem } from '../ink/InkSystem';
 import type { Character } from './Character';
 import type { GameCtx } from './types';
 
-export type WeaponKind = 'shooter' | 'roller' | 'charger' | 'blaster';
+export type WeaponKind = 'shooter' | 'roller' | 'charger' | 'blaster' | 'slosher' | 'splatling' | 'dualies';
 
 export interface WeaponSpec {
   kind: WeaponKind;
@@ -38,6 +38,24 @@ export const WEAPONS: Record<WeaponKind, WeaponSpec> = {
     blurb: 'Lobs slow, heavy ink shells that burst on impact. A direct hit splats!',
     stats: { range: 0.45, damage: 0.9, fireRate: 0.3, mobility: 0.65 },
   },
+  slosher: {
+    kind: 'slosher',
+    name: 'Splash Bucket',
+    blurb: 'Fling big arcs of ink over walls and up onto ledges. Two hits splat.',
+    stats: { range: 0.55, damage: 0.8, fireRate: 0.4, mobility: 0.7 },
+  },
+  splatling: {
+    kind: 'splatling',
+    name: 'Whirl Splatling',
+    blurb: 'Hold to spin up, release to unload a long stream of fast shots.',
+    stats: { range: 0.8, damage: 0.6, fireRate: 1.0, mobility: 0.4 },
+  },
+  dualies: {
+    kind: 'dualies',
+    name: 'Twin Dualies',
+    blurb: 'Two quick pistols. Press Jump while shooting to dodge-roll!',
+    stats: { range: 0.4, damage: 0.45, fireRate: 0.9, mobility: 0.95 },
+  },
 };
 
 const tmp = new THREE.Vector3();
@@ -50,6 +68,18 @@ export class WeaponState {
   flickT = 0;
   sinceFlick = 9;
   rolling = false;
+  /** splatling: seconds of firing left in the current burst */
+  burst = 0;
+  /** dualies: dodge rolls left before a short recovery, and post-roll aiming stance */
+  rollsLeft = 2;
+  rollRecover = 0;
+  stanceT = 0;
+  private hand = 0;
+
+  /** dualies: the first part of the stance is the roll itself */
+  get dodging() {
+    return this.kind === 'dualies' && this.stanceT > 0.33;
+  }
   private prevFire = false;
   private chargeSfxT = 0;
 
@@ -62,6 +92,9 @@ export class WeaponState {
     if (this.kind === 'charger') return 0.32;
     if (this.kind === 'blaster') return 0.6;
     if (this.kind === 'roller') return this.rolling ? 0.85 : 0.45;
+    if (this.kind === 'slosher') return 0.7;
+    if (this.kind === 'splatling') return this.burst > 0 ? 0.55 : 0.4;
+    if (this.kind === 'dualies') return this.stanceT > 0 ? 0 : 0.85;
     return 1;
   }
 
@@ -71,6 +104,33 @@ export class WeaponState {
     this.flickT = 0;
     this.rolling = false;
     this.prevFire = false;
+    this.burst = 0;
+    this.rollsLeft = 2;
+    this.rollRecover = 0;
+    this.stanceT = 0;
+  }
+
+  /**
+   * Dualies dodge roll: Jump while shooting and moving. Returns true if the jump was used for a roll.
+   * Called by Character before it applies a normal jump.
+   */
+  tryDodge(ch: Character, ctx: GameCtx) {
+    if (this.kind !== 'dualies' || !ch.input.fire || ch.swimming || !ch.grounded) return false;
+    const mv = ch.input.move;
+    if (mv.lengthSq() < 0.1 || this.rollsLeft <= 0 || ch.ink < 5) return false;
+    ch.ink -= 5;
+    this.rollsLeft--;
+    if (this.rollsLeft <= 0) this.rollRecover = 0.7;
+    const d = new THREE.Vector3(mv.x, 0, mv.y).normalize();
+    ch.vel.x = d.x * 15;
+    ch.vel.z = d.z * 15;
+    this.stanceT = 0.55;
+    ch.model.pop();
+    ctx.effects.burst(ch.pos.clone().setY(ch.pos.y + 0.2), new THREE.Vector3(0, 1, 0), ctx.colorOf(ch.team), 10, 4, 0.08);
+    const hit = ctx.physics.raycast(ch.pos.clone().setY(ch.pos.y + 0.5), DOWN, 1.5);
+    if (hit && hit.inkable) ctx.paintBy(ch, [{ x: hit.point.x, y: hit.point.y, z: hit.point.z, r: 0.9 }]);
+    ctx.sfx.dive();
+    return true;
   }
 
   update(dt: number, ch: Character, ctx: GameCtx) {
@@ -87,6 +147,59 @@ export class WeaponState {
           this.cooldown = 0.115;
           ch.ink -= 0.9;
           this.fireShooter(ch, ctx);
+        }
+        break;
+
+      case 'slosher':
+        if (fire && this.cooldown <= 0 && ch.ink >= 7) {
+          this.cooldown = 0.75;
+          ch.ink -= 7;
+          this.flickT = 0.12; // short wind-up swing before the ink leaves the bucket
+        }
+        if (this.flickT > 0) {
+          this.flickT -= dt;
+          if (this.flickT <= 0) this.slosh(ch, ctx);
+        }
+        break;
+
+      case 'splatling':
+        if (ch.model.rollerDrum) ch.model.rollerDrum.rotation.y += dt * (this.burst > 0 ? 30 : this.charge * 14);
+        if (this.burst > 0) {
+          // unloading: fixed rate until the burst runs out (can't re-charge mid-burst)
+          this.burst -= dt;
+          if (this.cooldown <= 0 && ch.ink >= 0.6) {
+            this.cooldown = 1 / 14;
+            ch.ink -= 0.6;
+            this.fireSplatling(ch, ctx);
+          }
+          if (ch.ink < 0.6) this.burst = 0;
+        } else if (fire && ch.ink >= 4) {
+          const before = this.charge;
+          this.charge = Math.min(1, this.charge + dt / 0.85);
+          this.chargeSfxT -= dt;
+          if (ch.isPlayer && this.chargeSfxT <= 0 && this.charge < 1) {
+            this.chargeSfxT = 0.07;
+            ctx.sfx.charge(this.charge * 0.7);
+          }
+          if (ch.isPlayer && before < 1 && this.charge >= 1) ctx.sfx.chargeFull();
+        } else if (released && this.charge > 0.08) {
+          this.burst = 0.3 + 1.5 * this.charge;
+          this.charge = 0;
+        } else if (!fire) {
+          this.charge = 0;
+        }
+        break;
+
+      case 'dualies':
+        this.stanceT -= dt;
+        if (this.rollRecover > 0) {
+          this.rollRecover -= dt;
+          if (this.rollRecover <= 0) this.rollsLeft = 2;
+        } else if (!fire) this.rollsLeft = 2;
+        if (fire && this.cooldown <= 0 && ch.ink >= 0.8) {
+          this.cooldown = 0.1;
+          ch.ink -= 0.8;
+          this.fireDualie(ch, ctx);
         }
         break;
 
@@ -147,6 +260,64 @@ export class WeaponState {
     ctx.projectiles.spawn({
       pos: muzzle, vel: dir.multiplyScalar(30), team: ch.team, owner: ch,
       damage: 35, paintR: 0.78, size: 0.15, gravDelay: 0.12, drips: true, falloff: 0.55,
+    });
+    ctx.sfx.shoot(ctx.listener.distanceTo(muzzle), ch.isPlayer);
+  }
+
+  private slosh(ch: Character, ctx: GameCtx) {
+    const muzzle = ch.muzzle(tmp).clone();
+    muzzle.y += 0.3;
+    const base = ch.aimDirFrom(muzzle, tmp2);
+    const yaw = Math.atan2(base.x, base.z);
+    // a lobbed arc: aim a bit higher than the crosshair so it can reach over cover
+    const pitch = Math.asin(THREE.MathUtils.clamp(base.y, -1, 1)) + 0.28;
+    for (let i = 0; i < 6; i++) {
+      const a = yaw + (Math.random() - 0.5) * 0.07;
+      const p = pitch - i * 0.035;
+      const sp = 17 - i * 0.9;
+      const d = new THREE.Vector3(Math.sin(a) * Math.cos(p), Math.sin(p), Math.cos(a) * Math.cos(p));
+      ctx.projectiles.spawn({
+        pos: muzzle.clone().addScaledVector(d, -i * 0.12), vel: d.multiplyScalar(sp), team: ch.team, owner: ch,
+        damage: i === 0 ? 70 : 12, paintR: i === 0 ? 1.15 : 0.7, size: i === 0 ? 0.3 : 0.19, gravDelay: 0, falloff: 1,
+      });
+    }
+    ctx.sfx.flick(ctx.listener.distanceTo(muzzle));
+    ch.model.pop();
+  }
+
+  private fireSplatling(ch: Character, ctx: GameCtx) {
+    const muzzle = ch.muzzle(tmp);
+    const dir = ch.aimDirFrom(muzzle, tmp2);
+    const spread = 0.035;
+    dir.x += (Math.random() - 0.5) * spread;
+    dir.y += (Math.random() - 0.5) * spread * 0.5;
+    dir.z += (Math.random() - 0.5) * spread;
+    dir.normalize();
+    ctx.projectiles.spawn({
+      pos: muzzle, vel: dir.multiplyScalar(38), team: ch.team, owner: ch,
+      damage: 28, paintR: 0.7, size: 0.13, gravDelay: 0.2, drips: true, falloff: 0.6,
+    });
+    ctx.sfx.shoot(ctx.listener.distanceTo(muzzle), ch.isPlayer);
+  }
+
+  private fireDualie(ch: Character, ctx: GameCtx) {
+    const muzzle = ch.muzzle(tmp);
+    // alternate hands
+    this.hand ^= 1;
+    if (this.hand) {
+      const y = ch.input.aimYaw;
+      muzzle.x += Math.cos(y) * 0.55;
+      muzzle.z -= Math.sin(y) * 0.55;
+    }
+    const dir = ch.aimDirFrom(muzzle, tmp2);
+    const spread = this.stanceT > 0 ? 0.02 : ch.grounded ? 0.07 : 0.15;
+    dir.x += (Math.random() - 0.5) * spread;
+    dir.y += (Math.random() - 0.5) * spread * 0.5;
+    dir.z += (Math.random() - 0.5) * spread;
+    dir.normalize();
+    ctx.projectiles.spawn({
+      pos: muzzle, vel: dir.multiplyScalar(this.stanceT > 0 ? 30 : 26), team: ch.team, owner: ch,
+      damage: 30, paintR: 0.62, size: 0.12, gravDelay: 0.08, drips: true, falloff: 0.5,
     });
     ctx.sfx.shoot(ctx.listener.distanceTo(muzzle), ch.isPlayer);
   }
@@ -292,6 +463,54 @@ export function buildWeaponModel(kind: WeaponKind, inkMat: THREE.Material): { mo
     tip.rotation.x = Math.PI;
     tip.position.y = -0.88;
     g.add(barrel, stock, tank, scope, tip);
+  } else if (kind === 'slosher') {
+    // a chunky paint bucket held by the handle
+    const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.13, 0.28, 20, 1, true), glossy('#f2f2f2'));
+    (bucket.material as THREE.MeshPhysicalMaterial).side = THREE.DoubleSide;
+    bucket.position.y = -0.24;
+    const bottom = new THREE.Mesh(new THREE.CircleGeometry(0.13, 20), glossy('#f2f2f2'));
+    bottom.rotation.x = Math.PI / 2;
+    bottom.position.y = -0.38;
+    const inkTop = new THREE.Mesh(new THREE.CircleGeometry(0.16, 20), inkMat);
+    inkTop.rotation.x = -Math.PI / 2;
+    inkTop.position.y = -0.13;
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.02, 8, 24), accent);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = -0.1;
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.015, 6, 20, Math.PI), dark);
+    handle.position.y = -0.1;
+    g.add(bucket, bottom, inkTop, rim, handle);
+  } else if (kind === 'splatling') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.42, 16), glossy('#f2f2f2'));
+    body.position.y = -0.18;
+    const drumM = new THREE.Group();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5, 8), dark);
+      b.position.set(Math.cos(a) * 0.06, -0.55, Math.sin(a) * 0.06);
+      drumM.add(b);
+    }
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.3, 16), inkMat);
+    tank.position.set(0, -0.15, 0.16);
+    tank.rotation.x = 0.1;
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.24), accent);
+    handle.position.set(0, 0.02, -0.08);
+    g.add(body, drumM, tank, handle);
+    drum = drumM; // spins while firing
+  } else if (kind === 'dualies') {
+    const pistol = () => {
+      const p = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.3, 0.12), glossy('#f2f2f2'));
+      body.position.y = -0.1;
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.12, 10), dark);
+      barrel.position.y = -0.29;
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.12, 10), inkMat);
+      tank.position.set(0, -0.08, 0.08);
+      p.add(body, barrel, tank);
+      return p;
+    };
+    g.add(pistol());
+    g.userData.offhand = pistol();
   } else if (kind === 'blaster') {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.36, 16), glossy('#f2f2f2'));
     body.position.y = -0.14;

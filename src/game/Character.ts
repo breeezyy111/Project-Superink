@@ -58,6 +58,10 @@ export class Character {
   private jetBaseY = 0;
   /** ownership cells this character painted this match */
   painted = 0;
+  /** online: position/velocity from the network (null = simulated here) */
+  net: { pos: THREE.Vector3; vel: THREE.Vector3; grounded: boolean } | null = null;
+  /** online: bumps on every respawn so stale position updates can be ignored */
+  life = 0;
   model: InkfinModel;
   collider: RAPIER.Collider;
   private controller: RAPIER.KinematicCharacterController;
@@ -109,6 +113,11 @@ export class Character {
     this.jetT = 0;
     this.specialT = 0;
     this.weapon.reset();
+    this.life++;
+    if (this.net) {
+      this.net.pos.copy(p);
+      this.net.vel.set(0, 0, 0);
+    }
     this.model.root.visible = true;
     this.syncCollider();
   }
@@ -201,64 +210,8 @@ export class Character {
     }
     this.submerged = this.swimming && (this.standing === 'own' || this.climbing);
 
-    // speed
-    let speed = PHYS.walkSpeed;
-    if (this.swimming) {
-      speed = this.submerged ? PHYS.swimSpeed : this.standing === 'enemy' ? 1.6 : PHYS.swimSpeedDry;
-    } else {
-      if (this.standing === 'enemy') speed = PHYS.walkSpeedEnemyInk;
-      speed *= this.weapon.speedMul(this);
-    }
-    if (jetting) speed = 5.5;
-
-    const target = tmp.set(mv.x * speed, 0, mv.y * speed);
-    const accel = jetting ? 30 : this.grounded || this.climbing ? (this.swimming ? 55 : 45) : 12;
-    const k = Math.min(1, accel * dt / Math.max(1, speed));
-    this.vel.x += (target.x - this.vel.x) * k;
-    this.vel.z += (target.z - this.vel.z) * k;
-
-    // vertical
-    if (jetting) {
-      // hover high above the ground the jet started from
-      const target = this.jetBaseY + 6;
-      this.vel.y = THREE.MathUtils.clamp((target - this.pos.y) * 3, -6, 8);
-      this.grounded = false;
-      if (Math.random() < 0.7) this.ctx.effects.burst(this.pos.clone(), DOWN, this.ctx.colorOf(this.team), 2, 6, 0.09);
-    } else if (this.climbing) {
-      this.vel.y = inp.jump ? PHYS.climbSpeed * 1.4 : PHYS.climbSpeed;
-      this.wasClimbing = true;
-    } else {
-      if (this.wasClimbing && this.swimming && mv.lengthSq() > 0.05) {
-        // popped over the top of a wall: give a little hop forward
-        this.vel.y = Math.max(this.vel.y, 5.5);
-        this.vel.x += mv.x * 2;
-        this.vel.z += mv.y * 2;
-      }
-      this.wasClimbing = false;
-      this.vel.y -= PHYS.gravity * dt;
-      if (this.grounded && this.vel.y < 0) this.vel.y = -1;
-      if (inp.jump && !this.jumpHeld && this.grounded) {
-        this.vel.y = this.submerged ? PHYS.jumpSpeed * 1.12 : PHYS.jumpSpeed;
-        this.grounded = false;
-        this.model.pop();
-        if (this.isPlayer) this.ctx.sfx.jump();
-      }
-    }
-    this.jumpHeld = inp.jump;
-
-    // move through Rapier's character controller
-    const delta = { x: this.vel.x * dt, y: this.vel.y * dt, z: this.vel.z * dt };
-    this.controller.computeColliderMovement(this.collider, delta, undefined, MAP_ONLY);
-    const m = this.controller.computedMovement();
-    this.grounded = this.controller.computedGrounded();
-    this.pos.x += m.x;
-    this.pos.y += m.y;
-    this.pos.z += m.z;
-    if (dt > 0) {
-      // bonk on ceilings, stop when blocked
-      if (this.vel.y > 0 && m.y < delta.y * 0.5 && !this.climbing) this.vel.y = 0;
-    }
-    this.syncCollider();
+    if (this.net) this.followNet(dt);
+    else this.move(dt, jetting);
 
     // facing
     if (this.swimming) {
@@ -308,6 +261,87 @@ export class Character {
   }
 
   private wasClimbing = false;
+
+  /** Online: this character is driven by someone else's position updates. */
+  private followNet(dt: number) {
+    const n = this.net!;
+    if (n.pos.distanceToSquared(this.pos) > 16) this.pos.copy(n.pos);
+    else this.pos.lerp(n.pos, Math.min(1, dt * 14));
+    this.vel.copy(n.vel);
+    this.grounded = n.grounded;
+    this.syncCollider();
+  }
+
+  private move(dt: number, jetting: boolean) {
+    const inp = this.input;
+    const mv = inp.move;
+    // speed
+    let speed = PHYS.walkSpeed;
+    if (this.swimming) {
+      speed = this.submerged ? PHYS.swimSpeed : this.standing === 'enemy' ? 1.6 : PHYS.swimSpeedDry;
+    } else {
+      if (this.standing === 'enemy') speed = PHYS.walkSpeedEnemyInk;
+      speed *= this.weapon.speedMul(this);
+    }
+    if (jetting) speed = 5.5;
+
+    const target = tmp.set(mv.x * speed, 0, mv.y * speed);
+    const accel = jetting ? 30 : this.grounded || this.climbing ? (this.swimming ? 55 : 45) : 12;
+    const k = Math.min(1, accel * dt / Math.max(1, speed));
+    if (this.weapon.dodging) {
+      // mid dodge roll: keep the burst of speed, easing off
+      this.vel.x *= 1 - Math.min(1, dt * 3);
+      this.vel.z *= 1 - Math.min(1, dt * 3);
+    } else {
+      this.vel.x += (target.x - this.vel.x) * k;
+      this.vel.z += (target.z - this.vel.z) * k;
+    }
+
+    // vertical
+    if (jetting) {
+      // hover high above the ground the jet started from
+      const target = this.jetBaseY + 6;
+      this.vel.y = THREE.MathUtils.clamp((target - this.pos.y) * 3, -6, 8);
+      this.grounded = false;
+      if (Math.random() < 0.7) this.ctx.effects.burst(this.pos.clone(), DOWN, this.ctx.colorOf(this.team), 2, 6, 0.09);
+    } else if (this.climbing) {
+      this.vel.y = inp.jump ? PHYS.climbSpeed * 1.4 : PHYS.climbSpeed;
+      this.wasClimbing = true;
+    } else {
+      if (this.wasClimbing && this.swimming && mv.lengthSq() > 0.05) {
+        // popped over the top of a wall: give a little hop forward
+        this.vel.y = Math.max(this.vel.y, 5.5);
+        this.vel.x += mv.x * 2;
+        this.vel.z += mv.y * 2;
+      }
+      this.wasClimbing = false;
+      this.vel.y -= PHYS.gravity * dt;
+      if (this.grounded && this.vel.y < 0) this.vel.y = -1;
+      if (inp.jump && !this.jumpHeld && this.grounded && this.weapon.tryDodge(this, this.ctx)) {
+        // dualies turned the jump into a dodge roll
+      } else if (inp.jump && !this.jumpHeld && this.grounded) {
+        this.vel.y = this.submerged ? PHYS.jumpSpeed * 1.12 : PHYS.jumpSpeed;
+        this.grounded = false;
+        this.model.pop();
+        if (this.isPlayer) this.ctx.sfx.jump();
+      }
+    }
+    this.jumpHeld = inp.jump;
+
+    // move through Rapier's character controller
+    const delta = { x: this.vel.x * dt, y: this.vel.y * dt, z: this.vel.z * dt };
+    this.controller.computeColliderMovement(this.collider, delta, undefined, MAP_ONLY);
+    const m = this.controller.computedMovement();
+    this.grounded = this.controller.computedGrounded();
+    this.pos.x += m.x;
+    this.pos.y += m.y;
+    this.pos.z += m.z;
+    if (dt > 0) {
+      // bonk on ceilings, stop when blocked
+      if (this.vel.y > 0 && m.y < delta.y * 0.5 && !this.climbing) this.vel.y = 0;
+    }
+    this.syncCollider();
+  }
 
   private updateModel(dt: number) {
     const r = this.model.root;

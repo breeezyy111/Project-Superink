@@ -86,6 +86,7 @@
           </div>
           <div class="coins"><span class="coin-ico"></span><b id="pc-coins">0</b></div>
         </div>
+        <button id="btn-news" class="news-btn" title="Splashburg News"><span class="live"></span>NEWS</button>
         <div id="hub-prompt" class="hub-prompt hidden"><kbd>E</kbd> <span id="hub-prompt-text">Enter</span></div>
         <div class="hub-hint">WASD move • Mouse look • Click shoot • Shift swim • Walk up to a shop and press <kbd>E</kbd></div>
         <div id="hub-lock" class="click-lock hidden">Click to look around</div>
@@ -119,6 +120,14 @@
           <span id="turf-a-pct" class="turf-pct a">0%</span>
           <div class="turf-track"><div id="turf-a" class="turf-fill a"></div><div id="turf-b" class="turf-fill b"></div></div>
           <span id="turf-b-pct" class="turf-pct b">0%</span>
+        </div>
+        <div id="zone-hud" class="zone-hud hidden">
+          <div class="zc a"><b id="zc-a">60</b><span id="zp-a" class="zpen"></span></div>
+          <div class="zmid">
+            <div id="zicon" class="zicon"><svg viewBox="0 0 40 40"><rect x="9" y="9" width="22" height="22" rx="4" transform="rotate(45 20 20)" /></svg></div>
+            <div class="zshare"><div id="zs-a" class="a"></div><div id="zs-b" class="b"></div></div>
+          </div>
+          <div class="zc b"><b id="zc-b">60</b><span id="zp-b" class="zpen"></span></div>
         </div>
         <div id="minimap" class="minimap hidden"><canvas></canvas></div>
         <button id="btn-exit" class="exit-btn" title="Exit match"><span class="x">✕</span> EXIT <kbd>Esc</kbd></button>
@@ -161,6 +170,7 @@
           <label class="field row"><span>Invert Y</span><input id="in-invert" type="checkbox" /></label>
           <label class="field row"><span>Sound effects</span><input id="in-vol" type="range" min="0" max="1" step="0.05" value="0.6" /></label>
           <label class="field row"><span>Music</span><input id="in-music" type="range" min="0" max="1" step="0.05" value="0.45" /></label>
+          <div class="field row"><span>Graphics</span><div id="in-quality" class="seg"><div class="chip" data-q="low">LOW</div><div class="chip" data-q="medium">MEDIUM</div><div class="chip" data-q="high">HIGH</div></div></div>
           <button id="btn-resume" class="blob-btn">RESUME</button>
           <button id="btn-quit" class="blob-btn alt">EXIT MATCH</button>
           <div class="hint" style="text-align:center">Leaving early skips the match rewards.</div>
@@ -170,6 +180,7 @@
       <!-- Results -->
       <section id="results" class="screen dim hidden">
         <div class="results">
+          <div id="res-judge" class="judge"></div>
           <div class="tag tilt">RESULTS</div>
           <div id="res-stage" class="res-stage"></div>
           <div id="res-winner" class="res-winner">...</div>
@@ -183,6 +194,22 @@
             <button id="btn-again" class="blob-btn">BATTLE AGAIN</button>
             <button id="btn-hub" class="blob-btn alt">SPLASHBURG</button>
           </div>
+        </div>
+      </section>
+
+      <!-- Splashburg News -->
+      <section id="news" class="screen hidden">
+        <div class="news-frame">
+          <div class="news-head"><span class="live"></span>SPLASHBURG NEWS<span class="news-sub">with Tide Pop</span></div>
+          <div class="news-stages"></div>
+          <div class="news-lumi news-idol"></div>
+          <div class="news-sepia news-idol"></div>
+          <div class="news-box">
+            <div class="news-name">Lumi</div>
+            <div class="news-text"></div>
+            <div class="news-more">▼</div>
+          </div>
+          <div class="news-skip">Click / Space: next • Esc: skip</div>
         </div>
       </section>
 
