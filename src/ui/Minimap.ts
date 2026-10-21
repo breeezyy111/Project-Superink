@@ -148,6 +148,18 @@ export class Minimap {
       g.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
       g.setLineDash([]);
     }
+    // Tower Control: the tower, in the riding team's color
+    const tw = m.tower;
+    if (tw) {
+      const [x, y] = this.screen(tw.pos.x, tw.pos.z);
+      g.fillStyle = tw.owner === -1 ? '#ffffff' : m.colorOf(tw.owner);
+      g.strokeStyle = '#15121c';
+      g.lineWidth = 2 * k;
+      g.beginPath();
+      g.arc(x, y, 6 * k, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+    }
     // teammates as dots, you as an arrow
     for (const c of m.characters) {
       if (c.team !== m.player.team || !c.alive) continue;

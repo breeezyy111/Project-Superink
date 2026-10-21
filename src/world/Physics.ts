@@ -64,10 +64,10 @@ export class Physics {
 
   private ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
 
-  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): RayHit | null {
+  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, exclude?: RAPIER.Collider): RayHit | null {
     this.ray.origin = { x: origin.x, y: origin.y, z: origin.z };
     this.ray.dir = { x: dir.x, y: dir.y, z: dir.z };
-    const hit = this.world.castRayAndGetNormal(this.ray, maxDist, true, undefined, MAP_ONLY);
+    const hit = this.world.castRayAndGetNormal(this.ray, maxDist, true, undefined, MAP_ONLY, exclude);
     if (!hit) return null;
     const info = this.colliderInfo.get(hit.collider.handle);
     return {

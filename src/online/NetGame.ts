@@ -125,6 +125,7 @@ export class HostSync {
         tl: r2(m.timeLeft),
         ot: m.overtime ? 1 : 0,
         z: z ? [r2(z.count[0]), r2(z.count[1]), r2(z.penalty[0]), r2(z.penalty[1]), z.owner, r2(z.share[0]), r2(z.share[1])] : 0,
+        w: m.tower ? [Math.round(m.tower.s * 1e4) / 1e4, r2(m.tower.best[0]), r2(m.tower.best[1]), m.tower.owner, r2(m.tower.penalty[0]), r2(m.tower.penalty[1])] : 0,
         c: m.characters.map(packChar),
       });
     }
@@ -188,6 +189,10 @@ export class ClientSync {
     const z = msg.z as number[] | 0;
     if (z && m.zones) {
       for (const e of m.zones.applyNet([z[0], z[1]], [z[2], z[3]], z[4] as Team | -1, [z[5], z[6]])) m.events.onZone?.(e);
+    }
+    const w = msg.w as number[] | 0;
+    if (w && m.tower) {
+      for (const e of m.tower.applyNet(w[0], [w[1], w[2]], w[3] as Team | -1, [w[4], w[5]])) m.events.onTower?.(e);
     }
     const list = msg.c as number[][];
     list.forEach((d, slot) => {

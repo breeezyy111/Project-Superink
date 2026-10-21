@@ -12,9 +12,12 @@ import type { PlayerController } from './PlayerController';
 import type { Difficulty } from './profile';
 import { InkWorld } from './World';
 import { ZoneControl, ZoneEvent } from './Zones';
+import { TowerControl, TowerEvent } from './Tower';
 
-export type Mode = 'turf' | 'zones';
-export const MODE_NAMES: Record<Mode, string> = { turf: 'Turf War', zones: 'Zone Control' };
+export type Mode = 'turf' | 'zones' | 'tower';
+export const MODE_NAMES: Record<Mode, string> = { turf: 'Turf War', zones: 'Zone Control', tower: 'Tower Control' };
+/** Count each team starts with in the count-down modes. */
+export const MODE_COUNT: Record<Mode, number> = { turf: 0, zones: 60, tower: 100 };
 
 export type Phase = 'intro' | 'countdown' | 'play' | 'finish' | 'done';
 
@@ -25,6 +28,7 @@ export interface MatchEvents {
   onHitMarker(): void;
   onPhase(p: Phase): void;
   onZone?(e: ZoneEvent): void;
+  onTower?(e: TowerEvent): void;
   onOvertime?(): void;
 }
 
@@ -95,13 +99,19 @@ export class Match extends InkWorld {
   phaseT = 0;
   readonly mode: Mode;
   zones: ZoneControl | null = null;
+  tower: TowerControl | null = null;
+  /** the count-down objective of this mode (zone or tower), if any */
+  get objective(): ZoneControl | TowerControl | null {
+    return this.zones ?? this.tower;
+  }
   overtime = false;
   ko = false;
   private overtimeT = 0;
   readonly net: NetOpts | null;
   /** online host: told about splats and hits so they can be sent to everyone */
   netHooks: { splat?(target: Character, attacker: Character | null): void; hit?(attacker: Character): void } = {};
-  private difficulty: Difficulty;
+  readonly ranked: boolean;
+  private skillRange: [number, number];
   /** online client: final numbers from the host */
   netFinal: NetFinal | null = null;
   private lastBeep = 99;
@@ -112,20 +122,22 @@ export class Match extends InkWorld {
     sfx: Sfx,
     private controller: PlayerController | null,
     readonly events: MatchEvents,
-    opts: { look: Look; kit: Kit; name: string; demo?: boolean; difficulty: Difficulty; mode?: Mode; net?: NetOpts },
+    opts: { look: Look; kit: Kit; name: string; demo?: boolean; difficulty: Difficulty; mode?: Mode; net?: NetOpts; ranked?: boolean; skill?: [number, number] },
   ) {
     super(r.scene, stage, sfx);
     this.mode = opts.mode ?? 'turf';
-    this.difficulty = opts.difficulty;
+    this.ranked = !!opts.ranked;
+    this.skillRange = opts.skill ?? SKILL[opts.difficulty];
     this.net = opts.net ?? null;
     this.authority = this.net?.role !== 'client';
     this.pair = this.net ? INK_PAIRS[this.net.pairIndex % INK_PAIRS.length] : INK_PAIRS[Math.floor(Math.random() * INK_PAIRS.length)];
     this.ink.setColors(this.pair.alpha, this.pair.bravo);
     this.ink.reset();
     if (this.mode === 'zones') this.zones = new ZoneControl(r.scene, stage.def, this.ink, this.physics, (t) => this.colorOf(t));
+    if (this.mode === 'tower') this.tower = new TowerControl(r.scene, stage.def, this.physics, (t) => this.colorOf(t));
     this.projectiles.setColors(this.pair.alpha, this.pair.bravo);
 
-    const [lo, hi] = SKILL[opts.difficulty];
+    const [lo, hi] = this.skillRange;
     if (this.net) {
       const net = this.net;
       net.roster.forEach((slot, i) => {
@@ -134,7 +146,7 @@ export class Match extends InkWorld {
         this.characters.push(ch);
         if (isPlayer) this.player = ch;
         else if (net.role === 'client' || slot.human) ch.net = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), grounded: true };
-        else this.bots.push(new Bot(ch, this, stage.info, THREE.MathUtils.lerp(lo, hi, Math.random()), this.zones));
+        else this.bots.push(new Bot(ch, this, stage.info, THREE.MathUtils.lerp(lo, hi, Math.random()), this.zones, this.tower));
       });
       this.spawnAll();
       this.setPhase('intro');
@@ -150,7 +162,7 @@ export class Match extends InkWorld {
         if (isPlayer) this.player = ch;
         // allies are a touch weaker than enemies on each difficulty, so you matter
         const skill = isPlayer ? 0.8 : THREE.MathUtils.lerp(lo, hi, Math.random()) * (t === 0 ? 0.9 : 1);
-        if (!isPlayer || opts.demo) this.bots.push(new Bot(ch, this, stage.info, skill, this.zones));
+        if (!isPlayer || opts.demo) this.bots.push(new Bot(ch, this, stage.info, skill, this.zones, this.tower));
       }
     }
     this.spawnAll();
@@ -181,9 +193,38 @@ export class Match extends InkWorld {
     this.splat(target, attacker);
   }
 
+  private lineupAt = new THREE.Vector3();
+  private lineupDir = new THREE.Vector3();
+
+  /** Results: line up your team at its base, facing the camera, and hide everyone else. */
+  private lineUp() {
+    const team = this.player.team;
+    const sp = this.stage.info.spawns[team][0];
+    const f = this.lineupDir.set(0, 0, team === 0 ? 1 : -1);
+    const right = new THREE.Vector3(f.z, 0, -f.x);
+    this.lineupAt.copy(sp).addScaledVector(f, 0.6);
+    const mates = this.characters.filter((c) => c.team === team);
+    // you stand in the middle
+    mates.sort((a, b) => (a.isPlayer ? -1 : b.isPlayer ? 1 : 0));
+    const order = [1, 2, 0, 3];
+    mates.forEach((c, i) => {
+      const at = this.lineupAt.clone().addScaledVector(right, (order[i] - 1.5) * 1.15);
+      const hit = this.physics.raycast(at.clone().setY(at.y + 3), new THREE.Vector3(0, -1, 0), 8);
+      if (hit) at.y = hit.point.y;
+      c.model.root.visible = true;
+      c.model.root.position.copy(at);
+      c.model.baseYaw = Math.atan2(f.x, f.z);
+      c.model.root.rotation.set(0, c.model.baseYaw, 0);
+    });
+    for (const c of this.characters) if (c.team !== team) c.model.root.visible = false;
+    this.projectiles.clear();
+    this.gadgets.clear();
+  }
+
   private setPhase(p: Phase) {
     this.phase = p;
     this.phaseT = 0;
+    if (p === 'done') this.lineUp();
     this.events.onPhase(p);
   }
 
@@ -191,8 +232,8 @@ export class Match extends InkWorld {
   replaceWithBot(ch: Character) {
     if (!ch.net) return;
     ch.net = null;
-    const [lo, hi] = SKILL[this.difficulty];
-    const b = new Bot(ch, this, this.stage.info, THREE.MathUtils.lerp(lo, hi, 0.5), this.zones);
+    const [lo, hi] = this.skillRange;
+    const b = new Bot(ch, this, this.stage.info, THREE.MathUtils.lerp(lo, hi, 0.5), this.zones, this.tower);
     b.reset();
     this.bots.push(b);
   }
@@ -238,12 +279,19 @@ export class Match extends InkWorld {
     this.phaseT += dt;
     const playing = this.phase === 'play';
     const frozen = this.phase === 'finish' || this.phase === 'done';
+    if (this.phase === 'done') {
+      const win = this.winner() === this.player.team;
+      let i = 0;
+      for (const c of this.characters) if (c.team === this.player.team) c.model.dance(dt, win, i++);
+    }
     if (!this.authority) {
       // online client: the host runs the clock, zone and respawns
       this.zones?.update(dt, false);
+      this.tower?.update(dt, false, this.characters);
+      this.tower?.carryRiders(this.characters);
       if (this.controller) {
         this.controller.enabled = playing && this.player.alive;
-        this.controller.update(dt, this.player, this.r.camera, this.physics);
+        if (this.phase !== 'done') this.controller.update(dt, this.player, this.r.camera, this.physics);
       }
       if (!playing) this.player.input.fire = false;
       this.listener.copy(this.player.pos);
@@ -264,11 +312,12 @@ export class Match extends InkWorld {
       }
     }
     if (this.zones) for (const e of this.zones.update(dt, playing)) this.events.onZone?.(e);
+    if (this.tower) for (const e of this.tower.update(dt, playing, this.characters)) this.events.onTower?.(e);
     if (playing) {
       const before = this.timeLeft;
       this.timeLeft = Math.max(0, this.timeLeft - dt);
       if (Math.ceil(before) !== Math.ceil(this.timeLeft) && this.timeLeft <= 10 && this.timeLeft > 0) this.sfx.beep(false);
-      const z = this.zones;
+      const z = this.objective;
       if (z && (z.count[0] <= 0 || z.count[1] <= 0)) {
         this.ko = true;
         this.sfx.whistle();
@@ -291,7 +340,7 @@ export class Match extends InkWorld {
 
     if (this.controller && !this.bots.some((b) => b.ch === this.player)) {
       this.controller.enabled = playing && this.player.alive;
-      this.controller.update(dt, this.player, this.r.camera, this.physics);
+      if (this.phase !== 'done') this.controller.update(dt, this.player, this.r.camera, this.physics);
     }
     for (const b of this.bots) {
       if (playing) b.update(dt);
@@ -327,7 +376,7 @@ export class Match extends InkWorld {
   winner(): Team {
     if (this.netFinal) return this.netFinal.winner;
     const turf = this.ink.turf();
-    const z = this.zones;
+    const z = this.objective;
     if (z) {
       const l = z.leader();
       if (l !== null) return l;
@@ -338,7 +387,7 @@ export class Match extends InkWorld {
 
   /** What the host tells everyone at the end of an online match. */
   final(): NetFinal {
-    const z = this.zones;
+    const z = this.objective;
     return {
       winner: this.winner(),
       turf: this.ink.turf(),
@@ -359,7 +408,7 @@ export class Match extends InkWorld {
       };
     }
     const turf = this.ink.turf();
-    const z = this.zones;
+    const z = this.objective;
     return {
       mode: this.mode,
       zoneCount: z ? [z.shown(0), z.shown(1)] : null,
@@ -374,6 +423,7 @@ export class Match extends InkWorld {
 
   dispose() {
     this.zones?.dispose();
+    this.tower?.dispose();
     super.dispose();
   }
 
@@ -390,6 +440,17 @@ export class Match extends InkWorld {
       const to = new THREE.Vector3(sp.x - 0.55 * f, sp.y + 2.1, sp.z - 3.2 * f);
       cam.position.lerpVectors(from, to, e);
       cam.lookAt(new THREE.Vector3(0, 1, 0).lerp(sp.clone().add(new THREE.Vector3(0, 1.6, 6 * f)), e));
+      return true;
+    }
+    if (this.phase === 'done') {
+      // face the lineup, shifted so they stand to the left of the results card
+      const f = this.lineupDir;
+      const right = new THREE.Vector3(f.z, 0, -f.x);
+      const look = this.lineupAt.clone().add(new THREE.Vector3(0, 0.85, 0)).addScaledVector(right, 2.1);
+      const want = this.lineupAt.clone().addScaledVector(f, 4.8).addScaledVector(right, 2.1).add(new THREE.Vector3(0, 1.9, 0));
+      if (this.phaseT < 0.05) cam.position.copy(want);
+      else cam.position.lerp(want, Math.min(1, dt * 3));
+      cam.lookAt(look);
       return true;
     }
     if (!p.alive) {

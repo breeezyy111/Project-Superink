@@ -81,11 +81,12 @@
         <div id="profile-chip" class="profile-chip" title="Account">
           <div class="lv">Lv <b id="pc-level">1</b></div>
           <div class="pc-body">
-            <div id="pc-name" class="pc-name">Player</div>
+            <div class="pc-top"><div id="pc-name" class="pc-name">Player</div><span id="pc-rank"></span></div>
             <div class="xp-bar"><div id="pc-xp"></div></div>
           </div>
           <div class="coins"><span class="coin-ico"></span><b id="pc-coins">0</b></div>
         </div>
+        <div id="daily-panel" class="daily-panel"></div>
         <button id="btn-news" class="news-btn" title="Splashburg News"><span class="live"></span>NEWS</button>
         <div id="hub-prompt" class="hub-prompt hidden"><kbd>E</kbd> <span id="hub-prompt-text">Enter</span></div>
         <div class="hub-hint">WASD move • Mouse look • Click shoot • Shift swim • Walk up to a shop and press <kbd>E</kbd></div>
@@ -129,6 +130,8 @@
           </div>
           <div class="zc b"><b id="zc-b">60</b><span id="zp-b" class="zpen"></span></div>
         </div>
+        <div id="boss-bar" class="boss-bar hidden"><div class="bb-name">DR. GLOOP</div><div class="bb-track"><div id="bb-fill"></div></div></div>
+        <div id="story-hint" class="story-hint hidden"></div>
         <div id="minimap" class="minimap hidden"><canvas></canvas></div>
         <button id="btn-exit" class="exit-btn" title="Exit match"><span class="x">✕</span> EXIT <kbd>Esc</kbd></button>
         <div id="special-gauge" class="special-gauge">
@@ -189,6 +192,8 @@
             <div class="res-bar"><div id="res-b" class="fill"></div><span id="res-b-pct">0%</span></div>
           </div>
           <div id="res-rewards" class="res-rewards"></div>
+          <div id="res-rank" class="res-rank hidden"></div>
+          <div id="res-daily" class="res-daily"></div>
           <table id="res-table" class="res-table"></table>
           <div class="row-btns">
             <button id="btn-again" class="blob-btn">BATTLE AGAIN</button>
@@ -210,6 +215,31 @@
             <div class="news-more">▼</div>
           </div>
           <div class="news-skip">Click / Space: next • Esc: skip</div>
+        </div>
+      </section>
+
+      <!-- Story mode: level select + level clear -->
+      <section id="story-menu" class="screen dim hidden">
+        <div class="story-panel">
+          <div class="tag tilt">STORY</div>
+          <h2>The Great Ink Orb</h2>
+          <div class="story-intro">Dr. Gloop stole the Orb that powers Splashburg's fountain! Get it back, one shard at a time.</div>
+          <div id="story-villain" class="story-villain"></div>
+          <div id="story-levels" class="story-levels"></div>
+          <button id="btn-story-close" class="blob-btn alt small">BACK</button>
+        </div>
+      </section>
+      <section id="story-done" class="screen dim hidden">
+        <div class="results story-done">
+          <div class="tag tilt">CLEAR!</div>
+          <div id="sd-title" class="res-winner">ORB SHARD GET!</div>
+          <div id="sd-level" class="res-stage"></div>
+          <div id="sd-stats" class="sd-stats"></div>
+          <div class="row-btns">
+            <button id="btn-sd-next" class="blob-btn">NEXT LEVEL</button>
+            <button id="btn-sd-again" class="blob-btn alt">PLAY AGAIN</button>
+            <button id="btn-sd-hub" class="blob-btn alt">SPLASHBURG</button>
+          </div>
         </div>
       </section>
 

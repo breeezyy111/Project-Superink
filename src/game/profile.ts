@@ -2,6 +2,7 @@ import { DEFAULT_LOOK, Look } from './InkfinModel';
 import { STARTER_ITEMS } from './items';
 import type { Quality } from '../engine/Renderer';
 import type { Mode } from './Match';
+import type { DailyState } from './daily';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -25,6 +26,13 @@ export interface Profile {
   mode: Mode;
   /** stage rotation slot of the last Splashburg News watched */
   newsSlot: number;
+  /** ranked: index into RANKS and the 0..100 meter */
+  rank: number;
+  rankPts: number;
+  daily: DailyState | null;
+  /** story levels cleared (ids) */
+  story: string[];
+  storyIntro: boolean;
 }
 
 const KEY = 'superink.profile.v2';
@@ -48,6 +56,11 @@ export function defaultProfile(): Profile {
     stage: 'random',
     mode: 'turf',
     newsSlot: -1,
+    rank: 0,
+    rankPts: 0,
+    daily: null,
+    story: [],
+    storyIntro: false,
   };
 }
 

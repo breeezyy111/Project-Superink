@@ -8,8 +8,7 @@ import { Sfx } from './audio/Sfx';
 import { Renderer } from './engine/Renderer';
 import { Hub, HUB_DEF, ZONES } from './game/Hub';
 import { kit } from './game/items';
-import { Match, MatchSummary, MODE_NAMES, randomLook } from './game/Match';
-import { ZONE_COUNT } from './game/Zones';
+import { Match, MatchSummary, MODE_COUNT, MODE_NAMES, randomLook } from './game/Match';
 import { PlayerController } from './game/PlayerController';
 import { addXp, defaultProfile, loadProfile, Profile, saveProfile, xpToNext } from './game/profile';
 import { WEAPONS } from './game/weapons';
@@ -19,9 +18,14 @@ import { Minimap } from './ui/Minimap';
 import { Account, friendlyError } from './online/Account';
 import { AccountPanel, AuthUI, toast } from './ui/AuthUI';
 import { ShopUI } from './ui/Shops';
+import { StoryUI } from './ui/StoryUI';
+import { StoryRun } from './story/StoryRun';
+import { LEVELS, LevelDef } from './story/levels';
 import { News } from './ui/News';
 import { judgeJellySvg } from './ui/Mascots';
 import { currentRotation, onRotation, ROTATION_BONUS } from './game/rotation';
+import { applyRanked, RankResult, RANKS, rankedMode, rankedSkill } from './game/ranked';
+import { currentDaily, DailyView, recordBattle, viewDaily } from './game/daily';
 import { Room, Msg } from './online/Room';
 import { ClientSync, HostSync } from './online/NetGame';
 import type { NetOpts, RosterSlot, Mode } from './game/Match';
@@ -30,7 +34,7 @@ import { INK_PAIRS, TEAM_SIZE, Team } from './config';
 import { Stage, StageDef } from './world/Stage';
 import { stageById, STAGES } from './world/stages';
 
-type Screen = 'title' | 'hub' | 'match' | 'results';
+type Screen = 'title' | 'hub' | 'match' | 'results' | 'story';
 
 const $ = (id: string) => document.getElementById(id)!;
 const params = new URLSearchParams(location.search);
@@ -91,6 +95,7 @@ async function boot() {
   let screen: Screen = 'title';
   let stage: Stage | null = null;
   let match: Match | null = null;
+  let story: StoryRun | null = null;
   let hub: Hub | null = null;
   let paused = false;
   let busy = false;
@@ -109,6 +114,9 @@ async function boot() {
 
   const teardown = () => {
     netSync = null;
+    story?.dispose();
+    story = null;
+    $('hud').classList.remove('story');
     minimap.hide();
     match?.dispose();
     match = null;
@@ -118,23 +126,26 @@ async function boot() {
     stage = null;
   };
 
-  const loadStage = async (def: StageDef) => {
+  const loadStage = async (def: StageDef, mode: Mode = 'turf') => {
     teardown();
-    stage = await Stage.create(def);
+    stage = await Stage.create(def, { towerLane: mode === 'tower' });
     r.scene.add(stage.group);
     return stage;
   };
+
+  /** mode for a match against bots (?mode= overrides it for testing) */
+  const soloMode = (): Mode => (params.get('mode') as Mode | null) ?? profile.mode;
 
   const pickStage = () => {
     if (params.get('stage')) return stageById(params.get('stage')!);
     if (profile.stage !== 'random') return stageById(profile.stage);
     // Random picks one of the stages on rotation for this mode
-    const rot = currentRotation()[profile.mode];
+    const rot = currentRotation()[soloMode()];
     const pool = rot.filter((s) => s.id !== lastStageId);
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
-  const newMatch = (st: Stage, demo: boolean, net?: NetOpts, netMode?: Mode) => {
+  const newMatch = (st: Stage, demo: boolean, net?: NetOpts, netMode?: Mode, ranked = false) => {
     match = new Match(r, st, sfx, demo ? null : controller, {
       onFeed: (t, k) => hud.pushFeed(t, k),
       onPlayerSplatted: (by) => hud.showSplatted(by),
@@ -142,7 +153,7 @@ async function boot() {
       onHitMarker: () => hud.hitMarker(),
       onPhase: (p) => {
         if (demo || screen !== 'match') return;
-        if (p === 'countdown') hud.bigText(match?.mode === 'zones' ? 'ZONE CONTROL!' : 'READY?', false, 2600);
+        if (p === 'countdown') hud.bigText(match?.mode === 'zones' ? 'ZONE CONTROL!' : match?.mode === 'tower' ? 'TOWER CONTROL!' : 'READY?', false, 2600);
         if (p === 'play') hud.bigText('GO!', true, 900);
         if (p === 'finish') {
           hud.bigText('GAME!', false, 0);
@@ -161,19 +172,30 @@ async function boot() {
           hud.pushFeed(ours ? 'We lost the zone!' : 'They lost the zone!', ours ? 'bad' : 'good');
         } else if (ours) hud.pushFeed('Our zone is under attack!', 'bad');
       },
+      onTower: (e) => {
+        if (demo || screen !== 'match') return;
+        const ours = e.team === match?.player.team;
+        if (e.kind === 'ride') {
+          hud.pushFeed(ours ? 'We have the tower!' : 'They have the tower!', ours ? 'good' : 'bad');
+          if (ours) sfx.specialReady();
+        } else if (e.kind === 'checkpoint') {
+          hud.bigText(ours ? `CHECKPOINT ${e.n}!` : `THEY HIT CHECKPOINT ${e.n}!`, !ours, 1400);
+          sfx.beep(true);
+        } else if (ours) hud.pushFeed('We lost the tower!', 'bad');
+      },
       onOvertime: () => {
         if (demo || screen !== 'match') return;
         hud.bigText('OVERTIME!', true, 1600);
         sfx.whistle();
       },
-    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty, net,
-      mode: netMode ?? (params.get('mode') === 'zones' ? 'zones' : demo ? 'turf' : profile.mode) });
+    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty, net, ranked, skill: ranked ? rankedSkill(profile.rank) : undefined,
+      mode: netMode ?? (demo && !params.get('mode') ? 'turf' : soloMode()) });
     hud.setup(match);
     if (!demo) minimap.setup(match);
   };
 
   const hideAll = () => {
-    for (const id of ['title', 'hub-hud', 'shop', 'hud', 'results', 'pause']) show(id, false);
+    for (const id of ['title', 'hub-hud', 'shop', 'hud', 'results', 'pause', 'story-menu', 'story-done', 'story-hint']) show(id, false);
   };
 
   // ---------- title ----------
@@ -244,6 +266,13 @@ async function boot() {
     $('pc-name').textContent = profile.name;
     $('pc-coins').textContent = profile.coins.toLocaleString();
     $('pc-xp').style.width = `${Math.min(100, (profile.xp / xpToNext(profile.level)) * 100)}%`;
+    $('pc-rank').innerHTML = profile.level >= 3 ? rankBadge(profile.rank) : '';
+    // today's challenges
+    profile.daily = currentDaily(profile.daily);
+    $('daily-panel').innerHTML = `<div class="dp-title">Daily challenges</div>` + viewDaily(profile.daily)
+      .map((d) => `<div class="dp ${d.done ? 'done' : ''}"><div class="dp-text">${d.done ? '✔ ' : ''}${d.text}</div>
+        <div class="dp-bar"><div style="width:${(d.progress / d.goal) * 100}%"></div></div><div class="dp-coins"><span class="coin-ico"></span>${d.coins}</div></div>`)
+      .join('');
   };
 
   const goHub = async (lock = false) => {
@@ -308,10 +337,10 @@ async function boot() {
       show('hub-hud', true);
       controller.requestLock();
     },
-    onBattle: () => {
+    onBattle: (ranked = false) => {
       unlockAudio();
       if (room?.isHost) startRoomMatch();
-      else if (!room) startMatch();
+      else if (!room) startMatch(ranked);
     },
     friends: {
       room: () => room,
@@ -333,18 +362,22 @@ async function boot() {
   });
 
   // ---------- match ----------
-  const startMatch = async () => {
+  let lastRanked = false;
+  const startMatch = async (ranked = false) => {
     if (busy) return;
     busy = true;
+    lastRanked = ranked;
     loading(true);
     hideAll();
-    const def = pickStage();
+    // Ranked: this rotation's ranked mode on one of its stages
+    const mode: Mode = ranked ? rankedMode() : params.has('demo') && !params.get('mode') ? 'turf' : soloMode();
+    const def = ranked ? currentRotation()[mode][Math.floor(Math.random() * 2)] : pickStage();
     lastStageId = def.id;
-    const st = await loadStage(def);
+    const st = await loadStage(def, mode);
     screen = 'match';
     paused = false;
     show('hud', true);
-    newMatch(st, params.has('demo'));
+    newMatch(st, params.has('demo'), undefined, ranked ? mode : undefined, ranked);
     music.playRandomBattle();
     loading(false);
     busy = false;
@@ -395,7 +428,7 @@ async function boot() {
     save();
   };
   controller.onPause = () => {
-    if (screen === 'match' && match && match.phase !== 'finish' && match.phase !== 'done') {
+    if ((screen === 'match' && match && match.phase !== 'finish' && match.phase !== 'done') || (screen === 'story' && story?.phase === 'play')) {
       paused = true;
       show('pause', true);
     }
@@ -406,7 +439,7 @@ async function boot() {
     controller.requestLock();
   });
   const exitMatch = () => {
-    if (screen !== 'match') return;
+    if (screen !== 'match' && screen !== 'story') return;
     sfx.ui();
     // online: the host ending the match ends it for everyone; a friend leaving leaves the room
     if (room && netSync) {
@@ -499,7 +532,7 @@ async function boot() {
     const pair = Math.floor(Math.random() * INK_PAIRS.length);
     readyFrom.clear();
     r.broadcast({ t: 'start', stage: def.id, mode, pair, roster, peers });
-    const st = await loadStage(def);
+    const st = await loadStage(def, mode);
     // wait (up to 20s) for everyone to load the stage
     const waiting = peers.filter((id): id is string => !!id && id !== r.myId);
     const t0 = performance.now();
@@ -528,7 +561,7 @@ async function boot() {
     hideAll();
     shop.close();
     accountPanel.close?.();
-    const st = await loadStage(stageById(msg.stage));
+    const st = await loadStage(stageById(msg.stage), msg.mode);
     lastStageId = msg.stage;
     screen = 'match';
     paused = false;
@@ -540,6 +573,146 @@ async function boot() {
     loading(false);
     busy = false;
     controller.requestLock();
+  };
+
+  // ---------- story mode ----------
+  const storyUI = new StoryUI(profile, sfx, (l) => startStory(l), () => {
+    if (hub) hub.inShop = false;
+    show('hub-hud', true);
+    controller.requestLock();
+  });
+  const openStory = async () => {
+    if (!hub) return;
+    hub.inShop = true;
+    controller.releaseLock();
+    show('hub-hud', false);
+    sfx.ui();
+    if (!profile.story.length && !profile.storyIntro) {
+      profile.storyIntro = true;
+      save();
+      await news.talk([
+        { who: 'lumi', text: 'BREAKING NEWS! The fountain in the plaza... it stopped glowing!' },
+        { who: 'sepia', text: 'Someone stole the Great Ink Orb. The thing that keeps Splashburg fresh.' },
+        { who: 'lumi', text: 'Witnesses saw a grumpy sea slug in goggles. And a LOT of purple goo.' },
+        { who: 'sepia', text: 'Dr. Gloop. He wants every color in town turned purple.' },
+        { who: 'lumi', text: "His goo is leaking out of this hatch! You're the only one brave enough to go in!" },
+        { who: 'sepia', text: 'Grab the Orb shards, splat the Gloopies, and bring it home. No pressure.' },
+        { who: 'both', text: 'Good luck, agent!' },
+      ], 'BREAKING NEWS!');
+    }
+    storyUI.show();
+  };
+  const storyHint = (text: string) => {
+    const el = $('story-hint');
+    el.textContent = text;
+    show('story-hint', true);
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = '';
+    clearTimeout((el as unknown as { t?: number }).t);
+    (el as unknown as { t?: number }).t = window.setTimeout(() => show('story-hint', false), 5500);
+  };
+  const startStory = async (level: LevelDef) => {
+    if (busy) return;
+    busy = true;
+    loading(true);
+    hideAll();
+    await loadStage(level.stage);
+    screen = 'story';
+    paused = false;
+    show('hud', true);
+    $('hud').classList.add('story');
+    show('boss-bar', false);
+    story = new StoryRun(r, stage!, sfx, controller, level, {
+      onFeed: (t, k) => hud.pushFeed(t, k),
+      onPlayerSplatted: (by) => hud.showSplatted(by),
+      onPlayerRespawn: () => hud.hideSplatted(),
+      onHitMarker: () => hud.hitMarker(),
+      onHint: storyHint,
+      onCheckpoint: () => hud.bigText('CHECKPOINT!', false, 1100),
+      onBoss: (f) => {
+        show('boss-bar', f !== null);
+        if (f !== null) $('bb-fill').style.width = `${f * 100}%`;
+      },
+      onComplete: (stats) => void finishStory(level, stats),
+    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player' });
+    hud.setup(story);
+    if (level.boss) {
+      music.playRandomBattle();
+      setTimeout(() => hud.bigText('DR. GLOOP!', true, 1600), 600);
+    } else {
+      music.play('tidepool');
+      setTimeout(() => hud.bigText(level.name.toUpperCase(), false, 1600), 400);
+    }
+    loading(false);
+    busy = false;
+    controller.requestLock();
+  };
+  const finishStory = async (level: LevelDef, stats: { time: number; deaths: number; splats: number }) => {
+    hud.bigText(level.boss ? 'YOU DID IT!' : 'CLEAR!', false, 1800);
+    const first = !profile.story.includes(level.id);
+    const coins = first ? level.coins : 100;
+    if (first) profile.story.push(level.id);
+    profile.coins += coins;
+    const levels = addXp(profile, first ? 400 : 120);
+    save();
+    await new Promise((res) => setTimeout(res, 1800));
+    controller.releaseLock();
+    if (level.boss && first) {
+      await news.talk([
+        { who: 'lumi', text: "WE'RE LIVE! The Great Ink Orb is back in the fountain!" },
+        { who: 'sepia', text: "Dr. Gloop's lab is a big puddle now. He ran off sniffling." },
+        { who: 'lumi', text: 'Splashburg is fresh again, thanks to you!' },
+        { who: 'sepia', text: "He'll be back. Villains always are. But not today." },
+        { who: 'both', text: 'Stay inky, hero!' },
+      ], 'THE ORB IS BACK!');
+    }
+    if (levels > 0) toast(`LEVEL UP! Lv ${profile.level}`);
+    const next = await storyUI.done(level, stats, coins, first);
+    const i = LEVELS.indexOf(level);
+    if (next === 'next' && LEVELS[i + 1]) startStory(LEVELS[i + 1]);
+    else if (next === 'again') startStory(level);
+    else goHub(true);
+  };
+
+  // ---------- ranked + daily on the results screen ----------
+  function rankBadge(r: number) {
+    return `<span class="rank-badge r${Math.floor(r / 3)}">${RANKS[r]}</span>`;
+  }
+  const renderRank = (res: RankResult | null) => {
+    const el = $('res-rank');
+    el.classList.toggle('hidden', !res);
+    if (!res) return;
+    const sign = res.delta >= 0 ? '+' : '';
+    el.innerHTML = `<div class="rk-row">${rankBadge(res.before)}<div class="rk-meter"><div class="rk-fill" style="width:${res.ptsBefore}%"></div></div>
+      <span class="rk-delta ${res.delta >= 0 ? 'up' : 'down'}">${sign}${res.delta}</span></div>`;
+    setTimeout(() => {
+      const fill = el.querySelector('.rk-fill') as HTMLElement;
+      if (res.rankUp || res.rankDown) {
+        fill.style.width = res.rankUp ? '100%' : '0%';
+        setTimeout(() => {
+          el.querySelector('.rank-badge')!.outerHTML = rankBadge(res.after);
+          fill.style.transition = 'none';
+          fill.style.width = `${res.rankUp ? 0 : 100}%`;
+          void fill.offsetWidth;
+          fill.style.transition = '';
+          fill.style.width = `${res.ptsAfter}%`;
+          const t = document.createElement('div');
+          t.className = `rk-banner ${res.rankUp ? 'up' : 'down'}`;
+          t.textContent = res.rankUp ? `RANK UP! ${RANKS[res.after]}` : `Rank down... ${RANKS[res.after]}`;
+          el.appendChild(t);
+          if (res.rankUp) sfx.specialReady();
+        }, 900);
+      } else fill.style.width = `${res.ptsAfter}%`;
+    }, 2600);
+  };
+  const renderDaily = (finished: DailyView[]) => {
+    const el = $('res-daily');
+    const list = viewDaily(profile.daily!);
+    el.innerHTML = `<div class="dl-title">Daily challenges</div>` + list
+      .map((d) => `<div class="dl ${d.done ? 'done' : ''}"><span>${d.done ? '✔ ' : ''}${d.text}</span><b>${d.done ? 'DONE' : `${d.progress.toLocaleString()}/${d.goal.toLocaleString()}`}</b></div>`)
+      .join('');
+    for (const f of finished) setTimeout(() => toast(`Challenge done: ${f.text}! +${f.coins} coins`), 2800);
   };
 
   // ---------- results ----------
@@ -555,7 +728,8 @@ async function boot() {
     const a = sum.turf[me], b = sum.turf[them];
     const mine = m.colorOf(me), theirs = m.colorOf(them);
     show('results', true);
-    $('res-stage').textContent = `${MODE_NAMES[m.mode]} • ${m.stage.def.name}`;
+    show('hud', false);
+    $('res-stage').textContent = `${m.ranked ? 'Ranked • ' : ''}${MODE_NAMES[m.mode]} • ${m.stage.def.name}`;
     const again = $('btn-again') as HTMLButtonElement;
     again.disabled = !!room && !room.isHost;
     again.textContent = room ? (room.isHost ? 'BATTLE AGAIN' : 'WAITING FOR HOST...') : 'BATTLE AGAIN';
@@ -577,7 +751,8 @@ async function boot() {
         // bars show each team's share of the painted turf; labels show map coverage
         // (Zone Control: how far each team counted down)
         const zc = sum.zoneCount;
-        const [va, vb] = zc ? [ZONE_COUNT - zc[me], ZONE_COUNT - zc[them]] : [a, b];
+        const max = MODE_COUNT[m.mode];
+        const [va, vb] = zc ? [max - zc[me], max - zc[them]] : [a, b];
         const total = Math.max(1e-6, va + vb);
         fa.style.width = `${Math.max(4, (va / total) * 100)}%`;
         fb.style.width = `${Math.max(4, (vb / total) * 100)}%`;
@@ -590,7 +765,21 @@ async function boot() {
     const xp = Math.round(sum.paintedM2 * 2 + (sum.win ? 300 : 100));
     profile.coins += coins;
     const levels = addXp(profile, xp);
+    // ranked meter
+    const rank = m.ranked ? applyRanked(profile.rank, profile.rankPts, sum.win, sum.ko) : null;
+    if (rank) {
+      profile.rank = rank.after;
+      profile.rankPts = rank.ptsAfter;
+    }
+    // daily challenges
+    profile.daily = currentDaily(profile.daily);
+    const finished = recordBattle(profile.daily, {
+      win: sum.win, mode: m.mode, ranked: m.ranked, paintedP: sum.paintedM2, splats: sum.splats, specials: m.player.kitState.specialUses,
+    });
+    for (const f of finished) profile.coins += f.coins;
     save();
+    renderRank(rank);
+    renderDaily(finished);
     const rw = $('res-rewards');
     rw.innerHTML = '';
     setTimeout(() => {
@@ -630,7 +819,7 @@ async function boot() {
   $('btn-again').addEventListener('click', () => {
     sfx.ui();
     if (room?.isHost) startRoomMatch();
-    else if (!room) startMatch();
+    else if (!room) startMatch(lastRanked);
   });
   $('btn-hub').addEventListener('click', () => {
     sfx.ui();
@@ -662,12 +851,14 @@ async function boot() {
         }
       }
     }
-    controller.allowLock = (screen === 'match' && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open && !news.open);
+    controller.allowLock = ((screen === 'match' || (screen === 'story' && story?.phase === 'play')) && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open && !news.open);
 
     if (screen === 'hub' && hub) {
       const overlay = auth.open || accountPanel.open || news.open;
       if (overlay) controller.consume('KeyE');
-      if (!overlay && !shop.open && hub.nearZone && controller.consume('KeyE')) {
+      if (!overlay && !shop.open && !storyUI.open && hub.nearZone?.id === 'story' && controller.consume('KeyE')) {
+        openStory();
+      } else if (!overlay && !shop.open && !storyUI.open && hub.nearZone && controller.consume('KeyE')) {
         hub.inShop = true;
         controller.releaseLock();
         show('hub-hud', false);
@@ -677,14 +868,23 @@ async function boot() {
       }
       hub.update(dt);
       const z = hub.nearZone;
-      show('hub-prompt', !!z && !shop.open);
+      show('hub-prompt', !!z && !shop.open && !storyUI.open);
       if (z) $('hub-prompt-text').textContent = z.id === 'tower' ? 'Enter Turf Tower (Battle!)' : `Enter ${z.name}`;
-      show('hub-lock', !controller.locked && !shop.open && !overlay);
+      show('hub-lock', !controller.locked && !shop.open && !overlay && !storyUI.open);
       if (shop.open) {
         preview.update(dt);
         r.renderer.render(preview.scene, preview.camera);
         return;
       }
+      r.render();
+      return;
+    }
+
+    if (screen === 'story' && story) {
+      if (!paused) story.update(dt);
+      story.spectate(dt, r.camera);
+      hud.update(story);
+      hud.setClickLock(story.phase === 'play' && !controller.locked && !paused);
       r.render();
       return;
     }
@@ -718,6 +918,8 @@ async function boot() {
   // expose for debugging/testing in the console
   (window as unknown as { superink: unknown }).superink = {
     get match() { return match; },
+    get story() { return story; },
+    startStory: (id: string) => startStory(LEVELS.find((l) => l.id === id) ?? LEVELS[0]),
     get hub() { return hub; },
     get screen() { return screen; },
     r, preview, profile, save, shop, controller, music, account, auth, zones: ZONES,
@@ -734,8 +936,10 @@ async function boot() {
   };
 
   tick();
-  if (params.has('play')) {
-    await startMatch();
+  if (params.get('story')) {
+    await startStory(LEVELS.find((l) => l.id === params.get('story')) ?? LEVELS[0]);
+  } else if (params.has('play')) {
+    await startMatch(params.has('ranked'));
   } else if (params.has('hub')) {
     await goHub();
   } else {
