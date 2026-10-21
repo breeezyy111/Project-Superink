@@ -130,6 +130,8 @@
           </div>
           <div class="zc b"><b id="zc-b">60</b><span id="zp-b" class="zpen"></span></div>
         </div>
+        <div id="boss-bar" class="boss-bar hidden"><div class="bb-name">DR. GLOOP</div><div class="bb-track"><div id="bb-fill"></div></div></div>
+        <div id="story-hint" class="story-hint hidden"></div>
         <div id="minimap" class="minimap hidden"><canvas></canvas></div>
         <button id="btn-exit" class="exit-btn" title="Exit match"><span class="x">✕</span> EXIT <kbd>Esc</kbd></button>
         <div id="special-gauge" class="special-gauge">
@@ -213,6 +215,31 @@
             <div class="news-more">▼</div>
           </div>
           <div class="news-skip">Click / Space: next • Esc: skip</div>
+        </div>
+      </section>
+
+      <!-- Story mode: level select + level clear -->
+      <section id="story-menu" class="screen dim hidden">
+        <div class="story-panel">
+          <div class="tag tilt">STORY</div>
+          <h2>The Great Ink Orb</h2>
+          <div class="story-intro">Dr. Gloop stole the Orb that powers Splashburg's fountain! Get it back, one shard at a time.</div>
+          <div id="story-villain" class="story-villain"></div>
+          <div id="story-levels" class="story-levels"></div>
+          <button id="btn-story-close" class="blob-btn alt small">BACK</button>
+        </div>
+      </section>
+      <section id="story-done" class="screen dim hidden">
+        <div class="results story-done">
+          <div class="tag tilt">CLEAR!</div>
+          <div id="sd-title" class="res-winner">ORB SHARD GET!</div>
+          <div id="sd-level" class="res-stage"></div>
+          <div id="sd-stats" class="sd-stats"></div>
+          <div class="row-btns">
+            <button id="btn-sd-next" class="blob-btn">NEXT LEVEL</button>
+            <button id="btn-sd-again" class="blob-btn alt">PLAY AGAIN</button>
+            <button id="btn-sd-hub" class="blob-btn alt">SPLASHBURG</button>
+          </div>
         </div>
       </section>
 

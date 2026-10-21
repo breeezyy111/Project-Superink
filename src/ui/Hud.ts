@@ -1,5 +1,8 @@
 import { INK_TANK, RESPAWN_SECONDS, Team } from '../config';
 import type { Match } from '../game/Match';
+
+/** What the HUD reads: a match, or a story level. */
+export type HudSource = Pick<Match, 'pair' | 'player' | 'characters' | 'colorOf' | 'timeLeft' | 'overtime' | 'objective' | 'tower' | 'ink'> & { phase: string };
 import { SPECIALS, SUBS } from '../game/items';
 import { WEAPONS } from '../game/weapons';
 
@@ -53,7 +56,7 @@ export class Hud {
     this.root.classList.toggle('hidden', !v);
   }
 
-  setup(m: Match) {
+  setup(m: HudSource) {
     // "a" is always your team (left side), "b" the other team
     const me = m.player.team;
     const mine = m.colorOf(me), theirs = m.colorOf((1 - me) as Team);
@@ -126,7 +129,7 @@ export class Hud {
     this.clickLock.classList.toggle('hidden', !v);
   }
 
-  update(m: Match) {
+  update(m: HudSource) {
     const t = Math.ceil(m.timeLeft);
     this.timer.textContent = m.overtime ? 'OVERTIME' : `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
     this.timer.classList.toggle('overtime', m.overtime);

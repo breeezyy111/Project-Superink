@@ -105,6 +105,16 @@ export class News {
     return new Promise((res) => (this.resolve = res));
   }
 
+  /** Play any conversation between Lumi and Sepia (used by story mode). */
+  talk(lines: { who: 'lumi' | 'sepia' | 'both'; text: string }[], title = 'SPLASHBURG NEWS'): Promise<void> {
+    this.lines = lines;
+    this.root.querySelector('.news-stages')!.innerHTML = `<div class="news-alert">${title}</div>`;
+    this.i = 0;
+    this.root.classList.remove('hidden');
+    this.say();
+    return new Promise((res) => (this.resolve = res));
+  }
+
   private renderStages() {
     const r = this.rot;
     const card = (name: string, id: string) => `<div class="news-stage st-${id}"><span>${name}</span></div>`;

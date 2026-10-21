@@ -18,6 +18,9 @@ import { Minimap } from './ui/Minimap';
 import { Account, friendlyError } from './online/Account';
 import { AccountPanel, AuthUI, toast } from './ui/AuthUI';
 import { ShopUI } from './ui/Shops';
+import { StoryUI } from './ui/StoryUI';
+import { StoryRun } from './story/StoryRun';
+import { LEVELS, LevelDef } from './story/levels';
 import { News } from './ui/News';
 import { judgeJellySvg } from './ui/Mascots';
 import { currentRotation, onRotation, ROTATION_BONUS } from './game/rotation';
@@ -31,7 +34,7 @@ import { INK_PAIRS, TEAM_SIZE, Team } from './config';
 import { Stage, StageDef } from './world/Stage';
 import { stageById, STAGES } from './world/stages';
 
-type Screen = 'title' | 'hub' | 'match' | 'results';
+type Screen = 'title' | 'hub' | 'match' | 'results' | 'story';
 
 const $ = (id: string) => document.getElementById(id)!;
 const params = new URLSearchParams(location.search);
@@ -92,6 +95,7 @@ async function boot() {
   let screen: Screen = 'title';
   let stage: Stage | null = null;
   let match: Match | null = null;
+  let story: StoryRun | null = null;
   let hub: Hub | null = null;
   let paused = false;
   let busy = false;
@@ -110,6 +114,9 @@ async function boot() {
 
   const teardown = () => {
     netSync = null;
+    story?.dispose();
+    story = null;
+    $('hud').classList.remove('story');
     minimap.hide();
     match?.dispose();
     match = null;
@@ -188,7 +195,7 @@ async function boot() {
   };
 
   const hideAll = () => {
-    for (const id of ['title', 'hub-hud', 'shop', 'hud', 'results', 'pause']) show(id, false);
+    for (const id of ['title', 'hub-hud', 'shop', 'hud', 'results', 'pause', 'story-menu', 'story-done', 'story-hint']) show(id, false);
   };
 
   // ---------- title ----------
@@ -421,7 +428,7 @@ async function boot() {
     save();
   };
   controller.onPause = () => {
-    if (screen === 'match' && match && match.phase !== 'finish' && match.phase !== 'done') {
+    if ((screen === 'match' && match && match.phase !== 'finish' && match.phase !== 'done') || (screen === 'story' && story?.phase === 'play')) {
       paused = true;
       show('pause', true);
     }
@@ -432,7 +439,7 @@ async function boot() {
     controller.requestLock();
   });
   const exitMatch = () => {
-    if (screen !== 'match') return;
+    if (screen !== 'match' && screen !== 'story') return;
     sfx.ui();
     // online: the host ending the match ends it for everyone; a friend leaving leaves the room
     if (room && netSync) {
@@ -566,6 +573,106 @@ async function boot() {
     loading(false);
     busy = false;
     controller.requestLock();
+  };
+
+  // ---------- story mode ----------
+  const storyUI = new StoryUI(profile, sfx, (l) => startStory(l), () => {
+    if (hub) hub.inShop = false;
+    show('hub-hud', true);
+    controller.requestLock();
+  });
+  const openStory = async () => {
+    if (!hub) return;
+    hub.inShop = true;
+    controller.releaseLock();
+    show('hub-hud', false);
+    sfx.ui();
+    if (!profile.story.length && !profile.storyIntro) {
+      profile.storyIntro = true;
+      save();
+      await news.talk([
+        { who: 'lumi', text: 'BREAKING NEWS! The fountain in the plaza... it stopped glowing!' },
+        { who: 'sepia', text: 'Someone stole the Great Ink Orb. The thing that keeps Splashburg fresh.' },
+        { who: 'lumi', text: 'Witnesses saw a grumpy sea slug in goggles. And a LOT of purple goo.' },
+        { who: 'sepia', text: 'Dr. Gloop. He wants every color in town turned purple.' },
+        { who: 'lumi', text: "His goo is leaking out of this hatch! You're the only one brave enough to go in!" },
+        { who: 'sepia', text: 'Grab the Orb shards, splat the Gloopies, and bring it home. No pressure.' },
+        { who: 'both', text: 'Good luck, agent!' },
+      ], 'BREAKING NEWS!');
+    }
+    storyUI.show();
+  };
+  const storyHint = (text: string) => {
+    const el = $('story-hint');
+    el.textContent = text;
+    show('story-hint', true);
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = '';
+    clearTimeout((el as unknown as { t?: number }).t);
+    (el as unknown as { t?: number }).t = window.setTimeout(() => show('story-hint', false), 5500);
+  };
+  const startStory = async (level: LevelDef) => {
+    if (busy) return;
+    busy = true;
+    loading(true);
+    hideAll();
+    await loadStage(level.stage);
+    screen = 'story';
+    paused = false;
+    show('hud', true);
+    $('hud').classList.add('story');
+    show('boss-bar', false);
+    story = new StoryRun(r, stage!, sfx, controller, level, {
+      onFeed: (t, k) => hud.pushFeed(t, k),
+      onPlayerSplatted: (by) => hud.showSplatted(by),
+      onPlayerRespawn: () => hud.hideSplatted(),
+      onHitMarker: () => hud.hitMarker(),
+      onHint: storyHint,
+      onCheckpoint: () => hud.bigText('CHECKPOINT!', false, 1100),
+      onBoss: (f) => {
+        show('boss-bar', f !== null);
+        if (f !== null) $('bb-fill').style.width = `${f * 100}%`;
+      },
+      onComplete: (stats) => void finishStory(level, stats),
+    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player' });
+    hud.setup(story);
+    if (level.boss) {
+      music.playRandomBattle();
+      setTimeout(() => hud.bigText('DR. GLOOP!', true, 1600), 600);
+    } else {
+      music.play('tidepool');
+      setTimeout(() => hud.bigText(level.name.toUpperCase(), false, 1600), 400);
+    }
+    loading(false);
+    busy = false;
+    controller.requestLock();
+  };
+  const finishStory = async (level: LevelDef, stats: { time: number; deaths: number; splats: number }) => {
+    hud.bigText(level.boss ? 'YOU DID IT!' : 'CLEAR!', false, 1800);
+    const first = !profile.story.includes(level.id);
+    const coins = first ? level.coins : 100;
+    if (first) profile.story.push(level.id);
+    profile.coins += coins;
+    const levels = addXp(profile, first ? 400 : 120);
+    save();
+    await new Promise((res) => setTimeout(res, 1800));
+    controller.releaseLock();
+    if (level.boss && first) {
+      await news.talk([
+        { who: 'lumi', text: "WE'RE LIVE! The Great Ink Orb is back in the fountain!" },
+        { who: 'sepia', text: "Dr. Gloop's lab is a big puddle now. He ran off sniffling." },
+        { who: 'lumi', text: 'Splashburg is fresh again, thanks to you!' },
+        { who: 'sepia', text: "He'll be back. Villains always are. But not today." },
+        { who: 'both', text: 'Stay inky, hero!' },
+      ], 'THE ORB IS BACK!');
+    }
+    if (levels > 0) toast(`LEVEL UP! Lv ${profile.level}`);
+    const next = await storyUI.done(level, stats, coins, first);
+    const i = LEVELS.indexOf(level);
+    if (next === 'next' && LEVELS[i + 1]) startStory(LEVELS[i + 1]);
+    else if (next === 'again') startStory(level);
+    else goHub(true);
   };
 
   // ---------- ranked + daily on the results screen ----------
@@ -744,12 +851,14 @@ async function boot() {
         }
       }
     }
-    controller.allowLock = (screen === 'match' && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open && !news.open);
+    controller.allowLock = ((screen === 'match' || (screen === 'story' && story?.phase === 'play')) && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open && !news.open);
 
     if (screen === 'hub' && hub) {
       const overlay = auth.open || accountPanel.open || news.open;
       if (overlay) controller.consume('KeyE');
-      if (!overlay && !shop.open && hub.nearZone && controller.consume('KeyE')) {
+      if (!overlay && !shop.open && !storyUI.open && hub.nearZone?.id === 'story' && controller.consume('KeyE')) {
+        openStory();
+      } else if (!overlay && !shop.open && !storyUI.open && hub.nearZone && controller.consume('KeyE')) {
         hub.inShop = true;
         controller.releaseLock();
         show('hub-hud', false);
@@ -759,14 +868,23 @@ async function boot() {
       }
       hub.update(dt);
       const z = hub.nearZone;
-      show('hub-prompt', !!z && !shop.open);
+      show('hub-prompt', !!z && !shop.open && !storyUI.open);
       if (z) $('hub-prompt-text').textContent = z.id === 'tower' ? 'Enter Turf Tower (Battle!)' : `Enter ${z.name}`;
-      show('hub-lock', !controller.locked && !shop.open && !overlay);
+      show('hub-lock', !controller.locked && !shop.open && !overlay && !storyUI.open);
       if (shop.open) {
         preview.update(dt);
         r.renderer.render(preview.scene, preview.camera);
         return;
       }
+      r.render();
+      return;
+    }
+
+    if (screen === 'story' && story) {
+      if (!paused) story.update(dt);
+      story.spectate(dt, r.camera);
+      hud.update(story);
+      hud.setClickLock(story.phase === 'play' && !controller.locked && !paused);
       r.render();
       return;
     }
@@ -800,6 +918,8 @@ async function boot() {
   // expose for debugging/testing in the console
   (window as unknown as { superink: unknown }).superink = {
     get match() { return match; },
+    get story() { return story; },
+    startStory: (id: string) => startStory(LEVELS.find((l) => l.id === id) ?? LEVELS[0]),
     get hub() { return hub; },
     get screen() { return screen; },
     r, preview, profile, save, shop, controller, music, account, auth, zones: ZONES,
@@ -816,7 +936,9 @@ async function boot() {
   };
 
   tick();
-  if (params.has('play')) {
+  if (params.get('story')) {
+    await startStory(LEVELS.find((l) => l.id === params.get('story')) ?? LEVELS[0]);
+  } else if (params.has('play')) {
     await startMatch(params.has('ranked'));
   } else if (params.has('hub')) {
     await goHub();

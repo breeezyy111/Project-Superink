@@ -30,6 +30,9 @@ export interface Profile {
   rank: number;
   rankPts: number;
   daily: DailyState | null;
+  /** story levels cleared (ids) */
+  story: string[];
+  storyIntro: boolean;
 }
 
 const KEY = 'superink.profile.v2';
@@ -56,6 +59,8 @@ export function defaultProfile(): Profile {
     rank: 0,
     rankPts: 0,
     daily: null,
+    story: [],
+    storyIntro: false,
   };
 }
 

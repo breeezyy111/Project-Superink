@@ -11,7 +11,7 @@ import { randomLook } from './Match';
 import type { PlayerController } from './PlayerController';
 import { InkWorld } from './World';
 
-export type ZoneId = 'tower' | 'arms' | 'threads' | 'studio' | 'locker';
+export type ZoneId = 'tower' | 'arms' | 'threads' | 'studio' | 'locker' | 'story';
 
 export interface Zone {
   id: ZoneId;
@@ -25,6 +25,7 @@ export const ZONES: Zone[] = [
   { id: 'studio', name: 'Fin Studio', pos: V(-26, 0, 12) },
   { id: 'threads', name: 'Frill Threads', pos: V(26, 0, -10) },
   { id: 'locker', name: 'Your Locker', pos: V(26, 0, 12) },
+  { id: 'story', name: 'the Gloop Hatch (Story)', pos: V(0, 0, 25.5) },
 ];
 
 const shopFront = (b: Parameters<StageDef['build']>[0], z: number, side: -1 | 1, name: string, surface: Parameters<typeof b.box>[6], signBg: string, signFg: string, a: string, c: string) => {
@@ -129,6 +130,27 @@ export const HUB_DEF: StageDef = {
     for (const [x, z] of [[-14, 0], [14, 0], [-6, -20], [6, -20]]) b.lamp(x, z);
     b.graffiti(4, -10, 2, -28.99, 0, 7);
     b.graffiti(1, 10, 2, -28.99, 0, 7);
+
+    // the mysterious hatch where purple goo leaks out: the way into story mode
+    const hatch = new THREE.Group();
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.8, 0.25, 32), new THREE.MeshStandardMaterial({ color: '#3a3350', roughness: 0.5, metalness: 0.3 }));
+    rim.position.y = 0.12;
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.35, 0.1, 32), new THREE.MeshStandardMaterial({ color: '#6b5a8e', roughness: 0.4, metalness: 0.4 }));
+    lid.position.set(0.5, 0.32, 0.3);
+    lid.rotation.set(0.25, 0, -0.35);
+    const goo = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.05, 32), new THREE.MeshPhysicalMaterial({ color: '#9b3cff', emissive: '#6a1fd0', emissiveIntensity: 0.5, roughness: 0.1, clearcoat: 1 }));
+    goo.position.y = 0.24;
+    hatch.add(rim, goo, lid);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const blob = new THREE.Mesh(new THREE.SphereGeometry(0.35 + (i % 3) * 0.12, 14, 10), new THREE.MeshPhysicalMaterial({ color: '#9b3cff', roughness: 0.1, clearcoat: 1 }));
+      blob.scale.y = 0.35;
+      blob.position.set(Math.cos(a) * (2 + (i % 2) * 0.6), 0.05, Math.sin(a) * (2 + (i % 2) * 0.6));
+      hatch.add(blob);
+    }
+    hatch.position.set(0, 0, 25.5);
+    b.add(hatch);
+    b.sign('???', 0, 2.6, 28.6, 3, Math.PI, '#9b3cff', '#e4ff2f');
 
     b.street();
     b.skyline(30, 30, 16, 0, 20, 55);

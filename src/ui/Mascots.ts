@@ -107,3 +107,29 @@ export function idolSvg(s: IdolStyle) {
 
 export const LUMI: IdolStyle = { hair: '#ff6ad5', hairDark: '#c2349b', skin: '#ffd9b8', outfit: '#fff35c', accent: '#7a3cff', extra: 'star' };
 export const SEPIA: IdolStyle = { hair: '#3fe0c5', hairDark: '#1a9c88', skin: '#c98d62', outfit: '#2b2440', accent: '#ff7a1a', extra: 'beret', flip: true };
+
+/** Dr. Gloop: a grumpy sea slug scientist with goggles and a lab coat. */
+export function drGloopSvg() {
+  return `<svg class="dr-gloop" viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg">
+  <g class="dg-bob">
+    <path d="M40 210 C30 150 40 90 70 70 C80 40 120 40 130 70 C160 90 170 150 160 210 Z" fill="#7dd85a" stroke="${INK}" stroke-width="5" stroke-linejoin="round"/>
+    <circle cx="70" cy="150" r="9" fill="#c25dff"/><circle cx="135" cy="120" r="7" fill="#c25dff"/><circle cx="120" cy="180" r="10" fill="#c25dff"/>
+    <!-- lab coat -->
+    <path d="M38 212 C42 170 58 150 76 146 L100 190 L124 146 C142 150 158 170 162 212 Z" fill="#fff" stroke="${INK}" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M100 190 L100 212" stroke="${INK}" stroke-width="4"/>
+    <!-- eye stalks -->
+    <path d="M82 60 C78 40 74 30 70 22" stroke="${INK}" stroke-width="11" fill="none" stroke-linecap="round"/>
+    <path d="M82 60 C78 40 74 30 70 22" stroke="#7dd85a" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M118 60 C122 40 126 30 130 22" stroke="${INK}" stroke-width="11" fill="none" stroke-linecap="round"/>
+    <path d="M118 60 C122 40 126 30 130 22" stroke="#7dd85a" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <circle cx="68" cy="20" r="13" fill="#fff" stroke="${INK}" stroke-width="4"/><circle cx="71" cy="22" r="6" fill="#ff2f6d"/>
+    <circle cx="132" cy="20" r="13" fill="#fff" stroke="${INK}" stroke-width="4"/><circle cx="129" cy="22" r="6" fill="#ff2f6d"/>
+    <!-- goggles -->
+    <rect x="62" y="84" width="76" height="12" rx="6" fill="${INK}"/>
+    <circle cx="82" cy="90" r="15" fill="#ffb347" stroke="${INK}" stroke-width="5"/><circle cx="118" cy="90" r="15" fill="#ffb347" stroke="${INK}" stroke-width="5"/>
+    <circle cx="77" cy="85" r="4" fill="#fff" opacity="0.8"/><circle cx="113" cy="85" r="4" fill="#fff" opacity="0.8"/>
+    <!-- grumpy mouth -->
+    <path d="M84 124 q16 -10 32 0" fill="none" stroke="${INK}" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>`;
+}

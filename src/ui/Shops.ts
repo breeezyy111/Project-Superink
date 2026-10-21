@@ -40,6 +40,7 @@ const INFO: Record<ZoneId, { tag: string; name: string; quotes: string[] }> = {
   threads: { tag: 'GEAR', name: 'Frill Threads', quotes: ['"Fresh fits for fresh fins, darling." — Mimi', '"Try it on! The mirror never lies." — Mimi'] },
   studio: { tag: 'SALON', name: 'Fin Studio', quotes: ['"Sit down, let\'s fluff those frills." — Coco', '"Stripes are SO in this season." — Coco'] },
   locker: { tag: 'INVENTORY', name: 'Your Locker', quotes: ['Everything you own, all in one place.'] },
+  story: { tag: 'STORY', name: 'Gloop Hatch', quotes: ['Something purple is bubbling down there...'] },
   tower: { tag: 'LOBBY', name: 'Turf Tower', quotes: ['"Four on four. Three minutes. Most turf wins!" — Judge Jelly', '"Hold the zone, hold your nerve!" — Judge Jelly', '"Ride that tower all the way home!" — Judge Jelly'] },
 };
 

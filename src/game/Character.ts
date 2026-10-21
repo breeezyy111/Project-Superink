@@ -60,6 +60,8 @@ export class Character {
   painted = 0;
   /** online: position/velocity from the network (null = simulated here) */
   net: { pos: THREE.Vector3; vel: THREE.Vector3; grounded: boolean } | null = null;
+  /** heals over time when not hurt (off for story enemies) */
+  regen = true;
   /** online: bumps on every respawn so stale position updates can be ignored */
   life = 0;
   model: InkfinModel;
@@ -141,7 +143,7 @@ export class Character {
     return out.copy(this.pos).add(tmp2.set(0, this.swimming ? 0.35 : 0.95, 0));
   }
 
-  hitRadius() {
+  hitRadius(): number {
     return this.swimming ? 0.45 : 0.55;
   }
 
@@ -209,11 +211,17 @@ export class Character {
     const mv = inp.move;
     if (this.swimming && mv.lengthSq() > 0.05) {
       const dir = tmp2.set(mv.x, 0, mv.y).normalize();
-      const origin = tmp.copy(this.pos).setY(this.pos.y + 0.45);
-      const hit = this.ctx.physics.raycast(origin, dir, PHYS.playerRadius + 0.4);
-      if (hit && hit.inkable && Math.abs(hit.normal.y) < 0.4) {
-        const o = this.ctx.ink.ownerAt(hit.parent, hit.point, hit.normal);
-        if (o === this.team + 1) this.climbing = true;
+      // your ink at foot height or a little above lets you climb
+      for (const h of [0.45, 1.1]) {
+        const origin = tmp.copy(this.pos).setY(this.pos.y + h);
+        const hit = this.ctx.physics.raycast(origin, dir, PHYS.playerRadius + 0.4);
+        if (hit && hit.inkable && Math.abs(hit.normal.y) < 0.4) {
+          const o = this.ctx.ink.ownerAt(hit.parent, hit.point, hit.normal);
+          if (o === this.team + 1) {
+            this.climbing = true;
+            break;
+          }
+        }
       }
     }
     this.submerged = this.swimming && (this.standing === 'own' || this.climbing);
@@ -251,7 +259,7 @@ export class Character {
     } else {
       this.enemyInkDamage = Math.max(0, this.enemyInkDamage - dt * 30);
     }
-    if (this.lastHurtT > HEALTH.regenDelay) {
+    if (this.regen && this.lastHurtT > HEALTH.regenDelay) {
       this.hp = Math.min(HEALTH.max, this.hp + HEALTH.regenPerSec * (this.submerged ? 1.6 : 1) * dt);
     }
 

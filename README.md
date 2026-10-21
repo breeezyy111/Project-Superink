@@ -52,12 +52,19 @@ If PlayFab can't be reached, the game still runs and saves progress in the brows
    - **Frill Threads** sells headgear, clothes and shoes, and you can try things on before buying.
    - **Fin Studio** is the salon: name, skin, fin hair, face marking and eyes. It's free.
    - **Your Locker** holds everything you own, so you can swap gear quickly.
-2. **Modes** (4v4, 3 minutes):
+2. **Battle modes** (4v4, 3 minutes):
    - **Turf War:** paint the most floor to win.
+   - **Tower Control:** a tower sits in the middle. Stand on it and it rolls toward the other team's base (it stops while both teams are on it, and pauses at 2 checkpoints). Push it all the way for a knockout; otherwise the team that pushed it furthest wins.
    - **Zone Control:** a zone sits in the middle of the stage. Cover 60% of it with your ink to take it. While your team holds it, your count drops from 60. First to 0 wins by knockout; otherwise the lower count wins at the buzzer. Retaking the zone adds a penalty, and the match goes to overtime if the team holding the zone is behind.
-3. **Splashburg News:** when you arrive in the plaza, Lumi and Sepia (the idol duo **Tide Pop**) announce the stages on rotation. Stages change every 2 hours. Playing a mode on one of its rotation stages earns **+25% coins**. Press **NEWS** in the top-right of the plaza to watch it again.
-4. **Results:** **Judge Jelly** watches the bars fill, then raises the winning team's flag.
-5. **Rewards:** you earn coins and XP from the turf you painted, splats, and winning. Leveling up unlocks more items.
+   - **Ranked battles** (from Lv 3, in the Turf Tower): ranks go from **C-** up to **S+**. Win to fill your rank meter, lose and it drains. Ranked plays Zone Control or Tower Control (it switches with each stage rotation), and the bots get tougher as you climb.
+   - **Daily challenges:** 3 new challenges every day (shown in the plaza and after each battle) give bonus coins.
+3. **Story mode: The Great Ink Orb.** Dr. Gloop, a grumpy sea slug scientist, stole the Orb that powers Splashburg's fountain. Jump into the **Gloop Hatch** at the south end of the plaza:
+   - 5 levels (Gloop Gate, Bounce Bay, Murky Mills, Gloop Towers, The Gauntlet) with bounce pads, moving platforms, ink walls to climb, Gloopie turrets, enemy goo, hypnotized Inkfins and checkpoints.
+   - Then the boss fight in **Dr. Gloop's Lab**: dodge his slam, and shoot the glowing core while he's dizzy.
+   - Each level gives coins the first time you clear it.
+4. **Splashburg News:** when you arrive in the plaza, Lumi and Sepia (the idol duo **Tide Pop**) announce the stages on rotation. Stages change every 2 hours. Playing a mode on one of its rotation stages earns **+25% coins**. Press **NEWS** in the top-right of the plaza to watch it again.
+5. **Results:** your team lines up and dances (or sulks), and **Judge Jelly** raises the winning team's flag.
+6. **Rewards:** you earn coins and XP from the turf you painted, splats, and winning. Leveling up unlocks more items.
 
 ## Playing with friends (online)
 
@@ -113,6 +120,10 @@ src/
   game/World.ts        shared ink world (painting credit, explosions, damage)
   game/Match.ts        Turf War / Zone Control rules, splats, respawns, phases, online roster
   game/Zones.ts        Zone Control: zone area, capture, counts, penalty, outline
+  game/Tower.ts        Tower Control: the moving tower, route, checkpoints
+  game/ranked.ts       ranks C- to S+, rank meter, ranked bot skill
+  game/daily.ts        daily challenges
+  story/               story mode: levels, StoryRun (enemies, pads, platforms, boss), models
   game/rotation.ts     stage rotation (every 2 hours, same for everyone)
   game/Hub.ts          Splashburg Plaza: shops, NPCs, door zones
   game/kit.ts          subs + specials (bombs, mines, cloud, wave, shield, jet)
@@ -136,6 +147,8 @@ playfab/               CloudScript (guest names) and setup guide
 
 - `?play`: skip menus and start a match right away (add `&stage=yard` etc. to pick one, `&mode=zones` for Zone Control).
 - `?nonews`: skip Splashburg News.
+- `?play&mode=tower` / `?play&ranked`: start a Tower Control / Ranked battle.
+- `?story=gate` (or `bounce`, `mills`, `towers`, `gauntlet`, `lab`): jump straight into a story level.
 - `?hub`: start in Splashburg Plaza.
 - `?play&demo`: bots control every character, with an overhead orbit camera.
 - `?play&demo&follow`: same as above, with the camera chasing your bot-controlled character.
@@ -144,10 +157,10 @@ playfab/               CloudScript (guest names) and setup guide
 ## Ideas for what's next
 
 - Gear abilities (like Splatoon's main/sub abilities)
-- More modes (Rainmaker / Tower Control-style)
+- More modes (Rainmaker-style)
+- More story worlds
 - Online matchmaking with strangers (rooms are friends-only for now)
 - Performance pass (merge character meshes)
-- An Octo Expansion-style story mode (later!)
 
 ## License
 
