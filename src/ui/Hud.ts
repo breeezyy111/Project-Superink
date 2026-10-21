@@ -72,7 +72,7 @@ export class Hud {
     this.big.classList.add('hidden');
     this.lastIconsKey = '';
     this.turfT = 0;
-    const zones = m.mode === 'zones';
+    const zones = !!m.objective;
     this.turfBar.classList.toggle('hidden', zones);
     this.zoneHud.classList.toggle('hidden', !zones);
     this.timer.classList.remove('overtime');
@@ -154,13 +154,15 @@ export class Hud {
     this.wcInk.style.width = `${inkFrac * 100}%`;
     this.crosshair.style.opacity = p.alive && m.phase === 'play' ? (p.swimming ? '0.35' : '1') : '0';
 
-    const z = m.zones;
+    const z = m.objective;
     const me = p.team, them = (1 - me) as Team;
     if (z) {
       this.zcA.textContent = String(Math.ceil(z.count[me]));
       this.zcB.textContent = String(Math.ceil(z.count[them]));
-      this.zpA.textContent = z.penalty[me] > 0 ? `+${Math.ceil(z.penalty[me])}` : '';
-      this.zpB.textContent = z.penalty[them] > 0 ? `+${Math.ceil(z.penalty[them])}` : '';
+      // zones: penalty count; tower: seconds stopped at a checkpoint
+      const pen = (v: number) => (v <= 0 ? '' : m.tower ? `CHECKPOINT ${Math.ceil(v)}` : `+${Math.ceil(v)}`);
+      this.zpA.textContent = pen(z.penalty[me]);
+      this.zpB.textContent = pen(z.penalty[them]);
       this.zcA.parentElement!.classList.toggle('held', z.owner === me);
       this.zcB.parentElement!.classList.toggle('held', z.owner === them);
       this.zIcon.className = `zicon ${z.owner === me ? 'a' : z.owner === them ? 'b' : ''}`;

@@ -4,6 +4,7 @@ import { SUBS } from './items';
 import type { Character } from './Character';
 import type { GameCtx } from './types';
 import type { ZoneControl } from './Zones';
+import type { TowerControl } from './Tower';
 
 /**
  * Simple but lively Turf War bot:
@@ -26,8 +27,10 @@ export class Bot {
   private chargeGoal = 1;
   private reaction = 0;
   private jumpT = 0;
+  /** Tower Control: this bot always goes for the tower */
+  private towerBot = Math.random() < 0.7;
 
-  constructor(readonly ch: Character, private ctx: GameCtx, private map: MapInfo, readonly skill = 0.6, private zone: ZoneControl | null = null) {}
+  constructor(readonly ch: Character, private ctx: GameCtx, private map: MapInfo, readonly skill = 0.6, private zone: ZoneControl | null = null, private tower: TowerControl | null = null) {}
 
   private subT = 2;
   private specialDelay = 1;
@@ -58,6 +61,13 @@ export class Bot {
   private pickTarget() {
     const b = this.map.bounds;
     const ch = this.ch;
+    // Tower Control: most bots head for the tower (a couple roam and paint)
+    const tw = this.tower;
+    if (tw && (this.towerBot || tw.owner !== ch.team)) {
+      tw.top(this.target);
+      this.retargetT = 0.8;
+      return;
+    }
     // forward-ish bias: Alpha pushes toward +z, Bravo toward -z
     const dirZ = ch.team === 0 ? 1 : -1;
     let best: THREE.Vector3 | null = null;
@@ -251,9 +261,30 @@ export class Bot {
     if (toMove.lengthSq() > 0.01 && !ch.climbing) {
       const dir = toMove.clone().setY(0).normalize();
       if (!this.groundAhead(dir)) {
-        toMove.set(0, 0, 0);
-        this.retargetT = 0;
+        // a ledge: look for a way around (bridges, edges), favouring our usual side
+        let found: THREE.Vector3 | null = null;
+        for (const a of [0.5, 1.0, 1.5]) {
+          for (const side of [this.strafe, -this.strafe]) {
+            const d = dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), a * side);
+            if (this.groundAhead(d)) {
+              found = d;
+              break;
+            }
+          }
+          if (found) break;
+        }
+        if (found) toMove.copy(found).multiplyScalar(toMove.length());
+        else {
+          toMove.set(0, 0, 0);
+          this.retargetT = 0;
+        }
       }
+    }
+
+    // Tower Control: once aboard, mostly stay on the deck (it carries us)
+    if (this.tower && this.towerBot && this.tower.onDeck(ch)) {
+      const c = this.tower.top(new THREE.Vector3()).sub(ch.pos).setY(0);
+      toMove.multiplyScalar(0.15).addScaledVector(c, 0.4);
     }
 
     // stuck detection

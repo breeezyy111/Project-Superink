@@ -50,6 +50,8 @@ export interface StageDef {
   killY?: number;
   /** Zone Control area (center + size); defaults to a 10 x 8 m box in the middle */
   zone?: { x: number; z: number; w: number; d: number };
+  /** Tower Control route from the middle to Bravo's base, as [x, z] points (Alpha's route is mirrored) */
+  towerPath?: [number, number][];
   /** false for non-symmetric places like the hub */
   mirrored?: boolean;
   build(b: StageBuilder): void;
@@ -344,13 +346,28 @@ export class Stage {
   info: StageInfo;
   private waters: THREE.Texture[];
 
-  private constructor(readonly def: StageDef, readonly physics: Physics) {
+  /** Tower Control: the tower's route, so props standing on it can be left out */
+  private lane: THREE.Vector2[][] | null = null;
+
+  private constructor(readonly def: StageDef, readonly physics: Physics, opts: { towerLane?: boolean } = {}) {
     const b = new StageBuilder(def.mirrored !== false);
     def.build(b);
+    if (opts.towerLane) {
+      const pts = (def.towerPath ?? [[0, 0], [0, def.half.z - 12]]).map(([x, z]) => new THREE.Vector2(x, z));
+      this.lane = [pts, pts.map((p) => p.clone().negate())];
+    }
     for (const d of b.defs) this.buildBox(d, def.mirrored !== false);
     for (const c of b.extraColliders) {
-      this.physics.addBox(c.pos, c.quat, c.half, b.decor, false);
-      if (c.mirror && def.mirrored !== false) this.physics.addBox(V(-c.pos.x, c.pos.y, -c.pos.z), c.quat, c.half, b.decor, false);
+      for (const pos of c.mirror && def.mirrored !== false ? [c.pos, V(-c.pos.x, c.pos.y, -c.pos.z)] : [c.pos]) {
+        if (this.blocksLane(pos, c.half, c.quat)) continue;
+        this.physics.addBox(pos, c.quat, c.half, b.decor, false);
+      }
+    }
+    if (this.lane) {
+      // props (trees, benches...) standing in the lane go too
+      for (const o of [...b.decor.children]) {
+        if (o.position.y < 2.5 && this.laneDist(o.position.x, o.position.z) < 2.2) b.decor.remove(o);
+      }
     }
     b.decor.traverse((o) => {
       if ((o as THREE.Mesh).isMesh && o.castShadow === false) o.receiveShadow = true;
@@ -370,9 +387,45 @@ export class Stage {
     };
   }
 
-  static async create(def: StageDef) {
+  static async create(def: StageDef, opts: { towerLane?: boolean } = {}) {
     const physics = await Physics.create();
-    return new Stage(def, physics);
+    return new Stage(def, physics, opts);
+  }
+
+  /** Distance from a point to the tower route (Infinity when there's no lane). */
+  private laneDist(x: number, z: number) {
+    if (!this.lane) return Infinity;
+    const p = new THREE.Vector2(x, z);
+    let best = Infinity;
+    for (const r of this.lane) {
+      for (let i = 1; i < r.length; i++) {
+        const a = r[i - 1], ab = r[i].clone().sub(a);
+        const t = THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / Math.max(1e-6, ab.lengthSq()), 0, 1);
+        best = Math.min(best, a.clone().addScaledVector(ab, t).distanceTo(p));
+      }
+    }
+    return best;
+  }
+
+  /** Would this box stand in the tower's way? (floors and things overhead are fine) */
+  private blocksLane(pos: THREE.Vector3, half: THREE.Vector3, quat: THREE.Quaternion) {
+    if (!this.lane) return false;
+    const top = pos.y + half.y, bottom = pos.y - half.y;
+    // keep floors, thin platforms (bridges, ramps, walkways) and anything high overhead;
+    // remove solid blocks, including ones stacked on top of blocks we removed
+    if (top <= 0.45 || half.y * 2 < 0.8) return false;
+    if (bottom >= 2.6 && !(bottom < 6 && half.y * 2 >= 1.5)) return false;
+    // footprint radius of the (possibly rotated) box
+    const e = new THREE.Vector3(half.x, 0, half.z).applyQuaternion(quat);
+    const e2 = new THREE.Vector3(half.x, 0, -half.z).applyQuaternion(quat);
+    const hx = Math.max(Math.abs(e.x), Math.abs(e2.x)), hz = Math.max(Math.abs(e.z), Math.abs(e2.z));
+    // sample the footprint against the lane
+    for (let i = 0; i <= 4; i++) {
+      for (let j = 0; j <= 4; j++) {
+        if (this.laneDist(pos.x - hx + (hx * 2 * i) / 4, pos.z - hz + (hz * 2 * j) / 4) < 1.9) return true;
+      }
+    }
+    return false;
   }
 
   private buildBox(d: BoxDef, mirrored: boolean) {
@@ -381,6 +434,7 @@ export class Stage {
       all.push({ ...d, pos: V(-d.pos.x, d.pos.y, -d.pos.z), quat: ROT_Y_PI.clone().multiply(d.quat) });
     }
     for (const b of all) {
+      if (this.blocksLane(b.pos, b.size.clone().multiplyScalar(0.5), b.quat)) continue;
       const geo = new THREE.BoxGeometry(b.size.x, b.size.y, b.size.z);
       const { mat, meters } = surfaceMaterial(b.surface);
       if (b.surface === 'court') {

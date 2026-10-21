@@ -92,6 +92,7 @@ export class News {
       ]),
       { who: 'lumi', text: `${MODE_NAMES.turf} is on ${t1.name} and ${t2.name}!` },
       { who: 'sepia', text: `${MODE_NAMES.zones} is at ${z1.name} and ${z2.name}. Hold that zone.` },
+      { who: 'lumi', text: `And ${MODE_NAMES.tower} rolls through ${r.tower[0].name} and ${r.tower[1].name}!` },
       { who: 'lumi', text: 'Battle on those stages for bonus coins!' },
       ...pick(BANTER),
       { who: 'sepia', text: `New stages in ${formatEndsIn(r.endsIn)}.` },
@@ -109,7 +110,8 @@ export class News {
     const card = (name: string, id: string) => `<div class="news-stage st-${id}"><span>${name}</span></div>`;
     this.root.querySelector('.news-stages')!.innerHTML = `
       <div class="news-mode"><div class="nm-title">${MODE_NAMES.turf}</div>${card(r.turf[0].name, r.turf[0].id)}${card(r.turf[1].name, r.turf[1].id)}</div>
-      <div class="news-mode zones"><div class="nm-title">${MODE_NAMES.zones}</div>${card(r.zones[0].name, r.zones[0].id)}${card(r.zones[1].name, r.zones[1].id)}</div>`;
+      <div class="news-mode zones"><div class="nm-title">${MODE_NAMES.zones}</div>${card(r.zones[0].name, r.zones[0].id)}${card(r.zones[1].name, r.zones[1].id)}</div>
+      <div class="news-mode tower"><div class="nm-title">${MODE_NAMES.tower}</div>${card(r.tower[0].name, r.tower[0].id)}${card(r.tower[1].name, r.tower[1].id)}</div>`;
   }
 
   private say() {

@@ -39,7 +39,7 @@ const INFO: Record<ZoneId, { tag: string; name: string; quotes: string[] }> = {
   threads: { tag: 'GEAR', name: 'Frill Threads', quotes: ['"Fresh fits for fresh fins, darling." — Mimi', '"Try it on! The mirror never lies." — Mimi'] },
   studio: { tag: 'SALON', name: 'Fin Studio', quotes: ['"Sit down, let\'s fluff those frills." — Coco', '"Stripes are SO in this season." — Coco'] },
   locker: { tag: 'INVENTORY', name: 'Your Locker', quotes: ['Everything you own, all in one place.'] },
-  tower: { tag: 'LOBBY', name: 'Turf Tower', quotes: ['"Four on four. Three minutes. Most turf wins!" — Judge Jelly', '"Hold the zone, hold your nerve!" — Judge Jelly'] },
+  tower: { tag: 'LOBBY', name: 'Turf Tower', quotes: ['"Four on four. Three minutes. Most turf wins!" — Judge Jelly', '"Hold the zone, hold your nerve!" — Judge Jelly', '"Ride that tower all the way home!" — Judge Jelly'] },
 };
 
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
@@ -362,6 +362,7 @@ export class ShopUI {
     const MODE_INFO: { id: Mode; blurb: string }[] = [
       { id: 'turf', blurb: 'Paint the most floor in 3 minutes.' },
       { id: 'zones', blurb: 'Take the zone in the middle and hold it. Your count drops while you own it. First to 0 wins!' },
+      { id: 'tower', blurb: 'Ride the tower in the middle toward their base. It stops at checkpoints. Push it all the way to win!' },
     ];
     for (const o of MODE_INFO) {
       const c = document.createElement('div');

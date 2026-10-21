@@ -123,6 +123,13 @@ export class Character {
     this.syncCollider();
   }
 
+  /** Moved by something we're standing on (the tower). */
+  carry(d: THREE.Vector3) {
+    this.pos.add(d);
+    this.net?.pos.add(d);
+    this.syncCollider();
+  }
+
   startJet() {
     const g = this.ctx.physics.raycast(this.pos.clone().setY(this.pos.y + 0.5), DOWN, 30);
     this.jetBaseY = g ? g.point.y : this.pos.y;

@@ -10,6 +10,7 @@ export const ROTATION_BONUS = 0.25;
 export interface Rotation {
   turf: [StageDef, StageDef];
   zones: [StageDef, StageDef];
+  tower: [StageDef, StageDef];
   /** ms until the next rotation */
   endsIn: number;
 }
@@ -28,8 +29,11 @@ export function currentRotation(now = Date.now()): Rotation {
     [list[i], list[j]] = [list[j], list[i]];
   }
   // with five stages, the fifth one gets a turn in the next rotation
-  const z = [list[2], list[3 + Math.floor(rnd() * 2)]] as [StageDef, StageDef];
-  return { turf: [list[0], list[1]], zones: z, endsIn: (slot + 1) * ROTATION_MS - now };
+  const k = 3 + Math.floor(rnd() * 2);
+  const z = [list[2], list[k]] as [StageDef, StageDef];
+  // Tower Control gets the stage Zone Control skipped, plus one of the Turf War ones
+  const tw = [list[k === 3 ? 4 : 3], list[Math.floor(rnd() * 2)]] as [StageDef, StageDef];
+  return { turf: [list[0], list[1]], zones: z, tower: tw, endsIn: (slot + 1) * ROTATION_MS - now };
 }
 
 export function onRotation(mode: Mode, stageId: string, rot = currentRotation()) {

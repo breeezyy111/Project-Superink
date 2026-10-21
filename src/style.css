@@ -649,3 +649,10 @@ kbd {
 @media (min-width: 1000px) {
   #results .res-winner { font-size: 40px; padding-right: 110px; text-align: left; }
 }
+.news-mode.tower .nm-title { color: #7fe0ff; }
+@media (min-width: 761px) {
+  .news-stages { gap: 10px; }
+  .news-mode { width: 168px; padding: 8px; }
+  .news-stage { height: 52px; font-size: 14px; }
+  .news-idol { width: 205px; height: 295px; }
+}

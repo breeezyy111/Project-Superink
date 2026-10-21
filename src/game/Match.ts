@@ -12,9 +12,12 @@ import type { PlayerController } from './PlayerController';
 import type { Difficulty } from './profile';
 import { InkWorld } from './World';
 import { ZoneControl, ZoneEvent } from './Zones';
+import { TowerControl, TowerEvent } from './Tower';
 
-export type Mode = 'turf' | 'zones';
-export const MODE_NAMES: Record<Mode, string> = { turf: 'Turf War', zones: 'Zone Control' };
+export type Mode = 'turf' | 'zones' | 'tower';
+export const MODE_NAMES: Record<Mode, string> = { turf: 'Turf War', zones: 'Zone Control', tower: 'Tower Control' };
+/** Count each team starts with in the count-down modes. */
+export const MODE_COUNT: Record<Mode, number> = { turf: 0, zones: 60, tower: 100 };
 
 export type Phase = 'intro' | 'countdown' | 'play' | 'finish' | 'done';
 
@@ -25,6 +28,7 @@ export interface MatchEvents {
   onHitMarker(): void;
   onPhase(p: Phase): void;
   onZone?(e: ZoneEvent): void;
+  onTower?(e: TowerEvent): void;
   onOvertime?(): void;
 }
 
@@ -95,6 +99,11 @@ export class Match extends InkWorld {
   phaseT = 0;
   readonly mode: Mode;
   zones: ZoneControl | null = null;
+  tower: TowerControl | null = null;
+  /** the count-down objective of this mode (zone or tower), if any */
+  get objective(): ZoneControl | TowerControl | null {
+    return this.zones ?? this.tower;
+  }
   overtime = false;
   ko = false;
   private overtimeT = 0;
@@ -123,6 +132,7 @@ export class Match extends InkWorld {
     this.ink.setColors(this.pair.alpha, this.pair.bravo);
     this.ink.reset();
     if (this.mode === 'zones') this.zones = new ZoneControl(r.scene, stage.def, this.ink, this.physics, (t) => this.colorOf(t));
+    if (this.mode === 'tower') this.tower = new TowerControl(r.scene, stage.def, this.physics, (t) => this.colorOf(t));
     this.projectiles.setColors(this.pair.alpha, this.pair.bravo);
 
     const [lo, hi] = SKILL[opts.difficulty];
@@ -134,7 +144,7 @@ export class Match extends InkWorld {
         this.characters.push(ch);
         if (isPlayer) this.player = ch;
         else if (net.role === 'client' || slot.human) ch.net = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), grounded: true };
-        else this.bots.push(new Bot(ch, this, stage.info, THREE.MathUtils.lerp(lo, hi, Math.random()), this.zones));
+        else this.bots.push(new Bot(ch, this, stage.info, THREE.MathUtils.lerp(lo, hi, Math.random()), this.zones, this.tower));
       });
       this.spawnAll();
       this.setPhase('intro');
@@ -150,7 +160,7 @@ export class Match extends InkWorld {
         if (isPlayer) this.player = ch;
         // allies are a touch weaker than enemies on each difficulty, so you matter
         const skill = isPlayer ? 0.8 : THREE.MathUtils.lerp(lo, hi, Math.random()) * (t === 0 ? 0.9 : 1);
-        if (!isPlayer || opts.demo) this.bots.push(new Bot(ch, this, stage.info, skill, this.zones));
+        if (!isPlayer || opts.demo) this.bots.push(new Bot(ch, this, stage.info, skill, this.zones, this.tower));
       }
     }
     this.spawnAll();
@@ -221,7 +231,7 @@ export class Match extends InkWorld {
     if (!ch.net) return;
     ch.net = null;
     const [lo, hi] = SKILL[this.difficulty];
-    const b = new Bot(ch, this, this.stage.info, THREE.MathUtils.lerp(lo, hi, 0.5), this.zones);
+    const b = new Bot(ch, this, this.stage.info, THREE.MathUtils.lerp(lo, hi, 0.5), this.zones, this.tower);
     b.reset();
     this.bots.push(b);
   }
@@ -275,6 +285,8 @@ export class Match extends InkWorld {
     if (!this.authority) {
       // online client: the host runs the clock, zone and respawns
       this.zones?.update(dt, false);
+      this.tower?.update(dt, false, this.characters);
+      this.tower?.carryRiders(this.characters);
       if (this.controller) {
         this.controller.enabled = playing && this.player.alive;
         if (this.phase !== 'done') this.controller.update(dt, this.player, this.r.camera, this.physics);
@@ -298,11 +310,12 @@ export class Match extends InkWorld {
       }
     }
     if (this.zones) for (const e of this.zones.update(dt, playing)) this.events.onZone?.(e);
+    if (this.tower) for (const e of this.tower.update(dt, playing, this.characters)) this.events.onTower?.(e);
     if (playing) {
       const before = this.timeLeft;
       this.timeLeft = Math.max(0, this.timeLeft - dt);
       if (Math.ceil(before) !== Math.ceil(this.timeLeft) && this.timeLeft <= 10 && this.timeLeft > 0) this.sfx.beep(false);
-      const z = this.zones;
+      const z = this.objective;
       if (z && (z.count[0] <= 0 || z.count[1] <= 0)) {
         this.ko = true;
         this.sfx.whistle();
@@ -361,7 +374,7 @@ export class Match extends InkWorld {
   winner(): Team {
     if (this.netFinal) return this.netFinal.winner;
     const turf = this.ink.turf();
-    const z = this.zones;
+    const z = this.objective;
     if (z) {
       const l = z.leader();
       if (l !== null) return l;
@@ -372,7 +385,7 @@ export class Match extends InkWorld {
 
   /** What the host tells everyone at the end of an online match. */
   final(): NetFinal {
-    const z = this.zones;
+    const z = this.objective;
     return {
       winner: this.winner(),
       turf: this.ink.turf(),
@@ -393,7 +406,7 @@ export class Match extends InkWorld {
       };
     }
     const turf = this.ink.turf();
-    const z = this.zones;
+    const z = this.objective;
     return {
       mode: this.mode,
       zoneCount: z ? [z.shown(0), z.shown(1)] : null,
@@ -408,6 +421,7 @@ export class Match extends InkWorld {
 
   dispose() {
     this.zones?.dispose();
+    this.tower?.dispose();
     super.dispose();
   }
 

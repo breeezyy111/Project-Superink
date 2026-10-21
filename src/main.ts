@@ -8,8 +8,7 @@ import { Sfx } from './audio/Sfx';
 import { Renderer } from './engine/Renderer';
 import { Hub, HUB_DEF, ZONES } from './game/Hub';
 import { kit } from './game/items';
-import { Match, MatchSummary, MODE_NAMES, randomLook } from './game/Match';
-import { ZONE_COUNT } from './game/Zones';
+import { Match, MatchSummary, MODE_COUNT, MODE_NAMES, randomLook } from './game/Match';
 import { PlayerController } from './game/PlayerController';
 import { addXp, defaultProfile, loadProfile, Profile, saveProfile, xpToNext } from './game/profile';
 import { WEAPONS } from './game/weapons';
@@ -118,18 +117,21 @@ async function boot() {
     stage = null;
   };
 
-  const loadStage = async (def: StageDef) => {
+  const loadStage = async (def: StageDef, mode: Mode = 'turf') => {
     teardown();
-    stage = await Stage.create(def);
+    stage = await Stage.create(def, { towerLane: mode === 'tower' });
     r.scene.add(stage.group);
     return stage;
   };
+
+  /** mode for a match against bots (?mode= overrides it for testing) */
+  const soloMode = (): Mode => (params.get('mode') as Mode | null) ?? profile.mode;
 
   const pickStage = () => {
     if (params.get('stage')) return stageById(params.get('stage')!);
     if (profile.stage !== 'random') return stageById(profile.stage);
     // Random picks one of the stages on rotation for this mode
-    const rot = currentRotation()[profile.mode];
+    const rot = currentRotation()[soloMode()];
     const pool = rot.filter((s) => s.id !== lastStageId);
     return pool[Math.floor(Math.random() * pool.length)];
   };
@@ -142,7 +144,7 @@ async function boot() {
       onHitMarker: () => hud.hitMarker(),
       onPhase: (p) => {
         if (demo || screen !== 'match') return;
-        if (p === 'countdown') hud.bigText(match?.mode === 'zones' ? 'ZONE CONTROL!' : 'READY?', false, 2600);
+        if (p === 'countdown') hud.bigText(match?.mode === 'zones' ? 'ZONE CONTROL!' : match?.mode === 'tower' ? 'TOWER CONTROL!' : 'READY?', false, 2600);
         if (p === 'play') hud.bigText('GO!', true, 900);
         if (p === 'finish') {
           hud.bigText('GAME!', false, 0);
@@ -161,13 +163,24 @@ async function boot() {
           hud.pushFeed(ours ? 'We lost the zone!' : 'They lost the zone!', ours ? 'bad' : 'good');
         } else if (ours) hud.pushFeed('Our zone is under attack!', 'bad');
       },
+      onTower: (e) => {
+        if (demo || screen !== 'match') return;
+        const ours = e.team === match?.player.team;
+        if (e.kind === 'ride') {
+          hud.pushFeed(ours ? 'We have the tower!' : 'They have the tower!', ours ? 'good' : 'bad');
+          if (ours) sfx.specialReady();
+        } else if (e.kind === 'checkpoint') {
+          hud.bigText(ours ? `CHECKPOINT ${e.n}!` : `THEY HIT CHECKPOINT ${e.n}!`, !ours, 1400);
+          sfx.beep(true);
+        } else if (ours) hud.pushFeed('We lost the tower!', 'bad');
+      },
       onOvertime: () => {
         if (demo || screen !== 'match') return;
         hud.bigText('OVERTIME!', true, 1600);
         sfx.whistle();
       },
     }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty, net,
-      mode: netMode ?? (params.get('mode') === 'zones' ? 'zones' : demo ? 'turf' : profile.mode) });
+      mode: netMode ?? (demo && !params.get('mode') ? 'turf' : soloMode()) });
     hud.setup(match);
     if (!demo) minimap.setup(match);
   };
@@ -340,7 +353,7 @@ async function boot() {
     hideAll();
     const def = pickStage();
     lastStageId = def.id;
-    const st = await loadStage(def);
+    const st = await loadStage(def, params.has('demo') && !params.get('mode') ? 'turf' : soloMode());
     screen = 'match';
     paused = false;
     show('hud', true);
@@ -499,7 +512,7 @@ async function boot() {
     const pair = Math.floor(Math.random() * INK_PAIRS.length);
     readyFrom.clear();
     r.broadcast({ t: 'start', stage: def.id, mode, pair, roster, peers });
-    const st = await loadStage(def);
+    const st = await loadStage(def, mode);
     // wait (up to 20s) for everyone to load the stage
     const waiting = peers.filter((id): id is string => !!id && id !== r.myId);
     const t0 = performance.now();
@@ -528,7 +541,7 @@ async function boot() {
     hideAll();
     shop.close();
     accountPanel.close?.();
-    const st = await loadStage(stageById(msg.stage));
+    const st = await loadStage(stageById(msg.stage), msg.mode);
     lastStageId = msg.stage;
     screen = 'match';
     paused = false;
@@ -578,7 +591,8 @@ async function boot() {
         // bars show each team's share of the painted turf; labels show map coverage
         // (Zone Control: how far each team counted down)
         const zc = sum.zoneCount;
-        const [va, vb] = zc ? [ZONE_COUNT - zc[me], ZONE_COUNT - zc[them]] : [a, b];
+        const max = MODE_COUNT[m.mode];
+        const [va, vb] = zc ? [max - zc[me], max - zc[them]] : [a, b];
         const total = Math.max(1e-6, va + vb);
         fa.style.width = `${Math.max(4, (va / total) * 100)}%`;
         fb.style.width = `${Math.max(4, (vb / total) * 100)}%`;
