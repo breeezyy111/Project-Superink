@@ -181,9 +181,38 @@ export class Match extends InkWorld {
     this.splat(target, attacker);
   }
 
+  private lineupAt = new THREE.Vector3();
+  private lineupDir = new THREE.Vector3();
+
+  /** Results: line up your team at its base, facing the camera, and hide everyone else. */
+  private lineUp() {
+    const team = this.player.team;
+    const sp = this.stage.info.spawns[team][0];
+    const f = this.lineupDir.set(0, 0, team === 0 ? 1 : -1);
+    const right = new THREE.Vector3(f.z, 0, -f.x);
+    this.lineupAt.copy(sp).addScaledVector(f, 0.6);
+    const mates = this.characters.filter((c) => c.team === team);
+    // you stand in the middle
+    mates.sort((a, b) => (a.isPlayer ? -1 : b.isPlayer ? 1 : 0));
+    const order = [1, 2, 0, 3];
+    mates.forEach((c, i) => {
+      const at = this.lineupAt.clone().addScaledVector(right, (order[i] - 1.5) * 1.15);
+      const hit = this.physics.raycast(at.clone().setY(at.y + 3), new THREE.Vector3(0, -1, 0), 8);
+      if (hit) at.y = hit.point.y;
+      c.model.root.visible = true;
+      c.model.root.position.copy(at);
+      c.model.baseYaw = Math.atan2(f.x, f.z);
+      c.model.root.rotation.set(0, c.model.baseYaw, 0);
+    });
+    for (const c of this.characters) if (c.team !== team) c.model.root.visible = false;
+    this.projectiles.clear();
+    this.gadgets.clear();
+  }
+
   private setPhase(p: Phase) {
     this.phase = p;
     this.phaseT = 0;
+    if (p === 'done') this.lineUp();
     this.events.onPhase(p);
   }
 
@@ -238,12 +267,17 @@ export class Match extends InkWorld {
     this.phaseT += dt;
     const playing = this.phase === 'play';
     const frozen = this.phase === 'finish' || this.phase === 'done';
+    if (this.phase === 'done') {
+      const win = this.winner() === this.player.team;
+      let i = 0;
+      for (const c of this.characters) if (c.team === this.player.team) c.model.dance(dt, win, i++);
+    }
     if (!this.authority) {
       // online client: the host runs the clock, zone and respawns
       this.zones?.update(dt, false);
       if (this.controller) {
         this.controller.enabled = playing && this.player.alive;
-        this.controller.update(dt, this.player, this.r.camera, this.physics);
+        if (this.phase !== 'done') this.controller.update(dt, this.player, this.r.camera, this.physics);
       }
       if (!playing) this.player.input.fire = false;
       this.listener.copy(this.player.pos);
@@ -291,7 +325,7 @@ export class Match extends InkWorld {
 
     if (this.controller && !this.bots.some((b) => b.ch === this.player)) {
       this.controller.enabled = playing && this.player.alive;
-      this.controller.update(dt, this.player, this.r.camera, this.physics);
+      if (this.phase !== 'done') this.controller.update(dt, this.player, this.r.camera, this.physics);
     }
     for (const b of this.bots) {
       if (playing) b.update(dt);
@@ -390,6 +424,17 @@ export class Match extends InkWorld {
       const to = new THREE.Vector3(sp.x - 0.55 * f, sp.y + 2.1, sp.z - 3.2 * f);
       cam.position.lerpVectors(from, to, e);
       cam.lookAt(new THREE.Vector3(0, 1, 0).lerp(sp.clone().add(new THREE.Vector3(0, 1.6, 6 * f)), e));
+      return true;
+    }
+    if (this.phase === 'done') {
+      // face the lineup, shifted so they stand to the left of the results card
+      const f = this.lineupDir;
+      const right = new THREE.Vector3(f.z, 0, -f.x);
+      const look = this.lineupAt.clone().add(new THREE.Vector3(0, 0.85, 0)).addScaledVector(right, 2.1);
+      const want = this.lineupAt.clone().addScaledVector(f, 4.8).addScaledVector(right, 2.1).add(new THREE.Vector3(0, 1.9, 0));
+      if (this.phaseT < 0.05) cam.position.copy(want);
+      else cam.position.lerp(want, Math.min(1, dt * 3));
+      cam.lookAt(look);
       return true;
     }
     if (!p.alive) {

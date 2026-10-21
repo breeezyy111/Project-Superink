@@ -119,6 +119,7 @@ export class Character {
       this.net.vel.set(0, 0, 0);
     }
     this.model.root.visible = true;
+    this.model.popIn();
     this.syncCollider();
   }
 
@@ -322,7 +323,7 @@ export class Character {
       } else if (inp.jump && !this.jumpHeld && this.grounded) {
         this.vel.y = this.submerged ? PHYS.jumpSpeed * 1.12 : PHYS.jumpSpeed;
         this.grounded = false;
-        this.model.pop();
+        this.model.stretch();
         if (this.isPlayer) this.ctx.sfx.jump();
       }
     }

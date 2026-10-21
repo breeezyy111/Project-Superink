@@ -206,6 +206,15 @@ export class InkfinModel {
   rollerDrum: THREE.Object3D | null = null;
   private walkPhase = 0;
   private squash = 1;
+  private squashV = 0;
+  private eyes: THREE.Mesh[] = [];
+  private blinkT = 2 + Math.random() * 3;
+  private airT = 0;
+  private idleT = 0;
+  private lookT = 3 + Math.random() * 4;
+  private lookYaw = 0;
+  private spawnT = 1;
+  private danceT = 0;
 
   constructor(public look: Look, inkColor: string, public weapon: WeaponKind) {
     this.root.add(this.kid, this.fish);
@@ -388,6 +397,7 @@ export class InkfinModel {
       eye.position.set(0.122 * s, 0.0, 0.272);
       eye.rotation.y = s * 0.4;
       this.head.add(eye);
+      this.eyes.push(eye);
       if (L.mark === 2) {
         // freckle dots in ink color
         for (let k = 0; k < 3; k++) {
@@ -663,9 +673,17 @@ export class InkfinModel {
   animate(dt: number, opts: { speed: number; grounded: boolean; aimPitch: number; inkFrac: number; swim: boolean; hidden: boolean; firing: boolean; rolling: boolean; climbing: boolean; flicking?: boolean }) {
     this.kid.visible = !opts.swim;
     this.fish.visible = opts.swim && !opts.hidden;
-    this.squash += (1 - this.squash) * Math.min(1, dt * 10);
-    const sq = this.squash;
-    this.root.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
+    this.weaponMount.visible = true;
+    this.offhandMount.visible = true;
+    this.kid.position.y = 0;
+    this.danceT = 0;
+    // landing: squash harder the longer we were in the air
+    if (opts.grounded) {
+      if (this.airT > 0.18 && !opts.swim) this.squash = Math.min(this.squash, 1 - Math.min(0.32, this.airT * 0.35));
+      this.airT = 0;
+    } else this.airT += dt;
+    this.updateSquash(dt);
+    this.blink(dt);
 
     this.tankInk.scale.y = Math.max(0.02, opts.inkFrac);
     this.tankInk.position.y = -0.15 + 0.15 * Math.max(0.02, opts.inkFrac);
@@ -690,7 +708,17 @@ export class InkfinModel {
       this.legs[1].rotation.x = 0.3;
     }
     const bob = moving ? Math.abs(Math.cos(this.walkPhase)) * 0.05 : 0;
-    this.torso.position.y = 0.5 + bob;
+    // idle: soft breathing bounce, and now and then a look around
+    this.idleT += dt;
+    const idle = !moving && opts.grounded && !opts.firing;
+    const breathe = idle ? Math.sin(this.idleT * 2.6) * 0.012 : 0;
+    this.torso.position.y = 0.5 + bob + breathe;
+    this.lookT -= dt;
+    if (this.lookT <= 0) {
+      this.lookT = 3 + Math.random() * 5;
+      this.lookYaw = idle && Math.random() < 0.7 ? (Math.random() - 0.5) * 1.1 : 0;
+    }
+    if (!idle) this.lookYaw = 0;
     const w = this.weapon;
     const roller = w === 'roller';
     const twoHand = (roller || w === 'splatling') && !opts.flicking;
@@ -709,11 +737,102 @@ export class InkfinModel {
       this.arms[0].rotation.x = twoHand ? this.arms[1].rotation.x : -swing * 0.8;
       this.arms[0].rotation.y = twoHand ? (roller ? -0.3 : -0.45) : 0;
     }
-    this.head.rotation.x = -opts.aimPitch * 0.5;
-    this.head.rotation.y = 0.25;
+    this.head.rotation.x = -opts.aimPitch * 0.5 + (idle ? Math.sin(this.idleT * 2.6 + 1) * 0.03 : 0);
+    this.head.rotation.y += (0.25 + this.lookYaw - this.head.rotation.y) * Math.min(1, dt * 5);
+    // a little lean into the run
+    this.torso.rotation.x = moving ? Math.min(0.18, opts.speed * 0.025) : 0;
+  }
+
+  /** Springy squash & stretch: squash < 1 is flattened, > 1 stretched; it wobbles back to 1. */
+  private updateSquash(dt: number) {
+    const k = 260, damp = 16;
+    this.squashV += (-(this.squash - 1) * k - this.squashV * damp) * dt;
+    this.squash += this.squashV * dt;
+    this.squash = THREE.MathUtils.clamp(this.squash, 0.45, 1.5);
+    // pop in after spawning
+    if (this.spawnT < 1) this.spawnT = Math.min(1, this.spawnT + dt * 4);
+    const grow = this.spawnT < 1 ? easeOutBack(this.spawnT) : 1;
+    const sq = this.squash;
+    const w = 1 / Math.sqrt(sq);
+    this.root.scale.set(w * grow, sq * grow, w * grow);
+  }
+
+  private blink(dt: number) {
+    this.blinkT -= dt;
+    // eyes close for ~0.12s (the hemisphere's height is its local z after rotation)
+    const closed = this.blinkT < 0.12 && this.blinkT > 0;
+    for (const e of this.eyes) e.scale.z += ((closed ? 0.08 : 1) - e.scale.z) * Math.min(1, dt * 40);
+    if (this.blinkT <= 0) this.blinkT = Math.random() < 0.15 ? 0.25 : 2 + Math.random() * 4;
   }
 
   pop() {
     this.squash = 0.55;
+    this.squashV = 0;
   }
+
+  /** Jump: stretch tall. */
+  stretch() {
+    this.squash = 1.28;
+    this.squashV = 0;
+  }
+
+  /** Grow in from nothing (respawn). */
+  popIn() {
+    this.spawnT = 0;
+  }
+
+  /**
+   * Results pose. Winners dance (hop, arms up, spin); losers slump and sniffle.
+   * Call every frame instead of animate().
+   */
+  dance(dt: number, win: boolean, seed = 0) {
+    this.kid.visible = true;
+    this.fish.visible = false;
+    // hands free for the celebration
+    this.weaponMount.visible = false;
+    this.offhandMount.visible = false;
+    this.danceT += dt;
+    const t = this.danceT + seed * 0.37;
+    this.blink(dt);
+    if (win) {
+      const beat = t * 4.2;
+      const hop = Math.max(0, Math.sin(beat)) * 0.14;
+      this.kid.position.y = hop;
+      this.squash = 1 + Math.sin(beat + Math.PI / 2) * 0.08;
+      this.squashV = 0;
+      this.updateSquash(0);
+      this.torso.position.y = 0.5;
+      this.torso.rotation.set(0, Math.sin(beat * 0.5) * 0.35, Math.sin(beat * 0.5) * 0.08);
+      this.arms[0].rotation.set(-2.6 + Math.sin(beat) * 0.4, 0, 0.3);
+      this.arms[1].rotation.set(-2.6 - Math.sin(beat) * 0.4, 0, -0.3);
+      this.legs[0].rotation.x = Math.sin(beat) * 0.35;
+      this.legs[1].rotation.x = -Math.sin(beat) * 0.35;
+      this.head.rotation.set(-0.15, Math.sin(beat * 0.5) * 0.3, Math.sin(beat) * 0.12);
+      // a full spin every few seconds
+      const spin = (t % 4) / 4;
+      this.root.rotation.y = this.baseYaw + (spin > 0.85 ? ((spin - 0.85) / 0.15) * Math.PI * 2 : 0);
+    } else {
+      this.kid.position.y = 0;
+      this.squash = 0.96;
+      this.squashV = 0;
+      this.updateSquash(0);
+      this.torso.position.y = 0.48;
+      this.torso.rotation.set(0.25, 0, 0);
+      const sniff = Math.max(0, Math.sin(t * 1.3)) ** 6;
+      this.arms[0].rotation.set(0.1, 0, 0.1);
+      this.arms[1].rotation.set(-1.3 - sniff * 0.6, 0, -0.5);
+      this.legs[0].rotation.x = 0;
+      this.legs[1].rotation.x = 0;
+      this.head.rotation.set(0.45 + sniff * 0.1, Math.sin(t * 0.7) * 0.15, 0);
+      this.root.rotation.y = this.baseYaw;
+    }
+  }
+
+  /** facing used by dance() */
+  baseYaw = 0;
+}
+
+function easeOutBack(t: number) {
+  const c = 1.9;
+  return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2;
 }

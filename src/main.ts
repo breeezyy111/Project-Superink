@@ -555,6 +555,7 @@ async function boot() {
     const a = sum.turf[me], b = sum.turf[them];
     const mine = m.colorOf(me), theirs = m.colorOf(them);
     show('results', true);
+    show('hud', false);
     $('res-stage').textContent = `${MODE_NAMES[m.mode]} • ${m.stage.def.name}`;
     const again = $('btn-again') as HTMLButtonElement;
     again.disabled = !!room && !room.isHost;

@@ -636,3 +636,16 @@ kbd {
 .room-member.can-move:not(.bot) { cursor: pointer; }
 .room-member.can-move:not(.bot):hover { background: var(--pink); }
 .blob-btn:disabled { opacity: 0.6; cursor: default; filter: grayscale(0.4); }
+
+/* results: card on the right so your team's victory dance shows on the left */
+#results.dim { background: linear-gradient(90deg, rgba(10,6,18,0) 0 38%, rgba(10,6,18,0.6) 60%); backdrop-filter: none; }
+@media (min-width: 1000px) {
+  #results { justify-content: flex-end; padding-right: 4vw; }
+  #results .results { width: min(560px, 52vw); }
+}
+@media (max-width: 999px) {
+  #results.dim { background: rgba(10, 6, 18, 0.55); }
+}
+@media (min-width: 1000px) {
+  #results .res-winner { font-size: 40px; padding-right: 110px; text-align: left; }
+}
