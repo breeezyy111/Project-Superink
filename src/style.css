@@ -656,3 +656,46 @@ kbd {
   .news-stage { height: 52px; font-size: 14px; }
   .news-idol { width: 205px; height: 295px; }
 }
+
+/* ---------- ranked ---------- */
+.rank-badge {
+  display: inline-grid; place-items: center; min-width: 40px; height: 30px; padding: 0 8px; border-radius: 10px;
+  font-family: var(--display); font-size: 18px; color: #fff; border: 3px solid var(--dark);
+  -webkit-text-stroke: 4px var(--dark); paint-order: stroke fill; background: #7d8597;
+}
+.rank-badge.r1 { background: #4fb0ff; }
+.rank-badge.r2 { background: #ff8a3d; }
+.rank-badge.r3 { background: linear-gradient(135deg, #ffe14a, #ff4fb8); }
+.ranked { display: flex; flex-direction: column; gap: 8px; background: var(--dark); border-radius: 16px; padding: 12px; text-transform: none; letter-spacing: 0; }
+.ranked .hint { font-weight: 600; font-size: 13px; opacity: 0.85; }
+.ranked-btn { align-self: flex-start; background: linear-gradient(135deg, #ffe14a, #ff8a3d); }
+.rk-row { display: flex; align-items: center; gap: 10px; }
+.rk-meter { flex: 1; height: 14px; border-radius: 8px; background: #3a3350; overflow: hidden; border: 2px solid var(--dark); }
+.rk-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ffe14a, #ff8a3d); transition: width 0.9s cubic-bezier(.3,.9,.3,1); }
+.rk-delta { font-family: var(--display); font-size: 18px; min-width: 44px; text-align: right; }
+.rk-delta.up { color: var(--lime); }
+.rk-delta.down { color: #ff7ab8; }
+.res-rank { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.rk-banner { font-family: var(--display); font-size: 22px; text-align: center; animation: pop 0.4s cubic-bezier(.2,1.6,.4,1) both; }
+.rk-banner.up { color: #ffe14a; }
+.rk-banner.down { color: #ff7ab8; }
+
+/* ---------- daily challenges ---------- */
+.res-daily { display: flex; flex-direction: column; gap: 3px; font-weight: 700; font-size: 13px; }
+.res-daily .dl-title, .dp-title { font-family: var(--display); font-size: 14px; opacity: 0.8; }
+.res-daily .dl { display: flex; justify-content: space-between; gap: 10px; opacity: 0.9; }
+.res-daily .dl.done { color: var(--lime); }
+.pc-top { display: flex; align-items: center; gap: 8px; }
+.pc-top .rank-badge { height: 24px; min-width: 32px; font-size: 14px; border-width: 2px; }
+.daily-panel {
+  position: absolute; left: 18px; top: 92px; width: 250px; display: flex; flex-direction: column; gap: 6px;
+  background: rgba(21,18,28,0.82); border-radius: 16px; padding: 10px 12px; box-shadow: 0 5px 0 rgba(0,0,0,0.3);
+}
+.dp { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; font-weight: 700; font-size: 13px; }
+.dp-text { grid-column: 1; }
+.dp-coins { grid-column: 2; grid-row: 1 / span 2; font-family: var(--display); font-size: 14px; display: flex; align-items: center; gap: 4px; }
+.dp-bar { grid-column: 1; height: 6px; border-radius: 4px; background: #3a3350; overflow: hidden; }
+.dp-bar div { height: 100%; background: var(--lime); }
+.dp.done { opacity: 0.6; }
+.dp.done .dp-text { color: var(--lime); }
+@media (max-width: 760px) { .daily-panel { display: none; } }

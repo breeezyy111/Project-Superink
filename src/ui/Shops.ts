@@ -6,6 +6,7 @@ import type { Team } from '../config';
 import type { ZoneId } from '../game/Hub';
 import { Mode, MODE_NAMES } from '../game/Match';
 import { currentRotation, ROTATION_BONUS } from '../game/rotation';
+import { RANKED_LEVEL, rankedMode, RANKS } from '../game/ranked';
 import { WEAPONS } from '../game/weapons';
 import { STAGES } from '../world/stages';
 import type { LockerStage } from './LockerStage';
@@ -22,7 +23,7 @@ export interface ShopDeps {
   /** change the in-game name; null when names are locked (guests) */
   rename: ((name: string) => Promise<string>) | null;
   onClose(): void;
-  onBattle(): void;
+  onBattle(ranked?: boolean): void;
   friends: FriendsApi;
 }
 
@@ -347,6 +348,7 @@ export class ShopUI {
       this.d.onBattle();
     };
     body.appendChild(go);
+    if (!room) this.renderRanked(body);
     this.renderFriends(body, room);
     if (guest) {
       const info = document.createElement('div');
@@ -429,6 +431,35 @@ export class ShopUI {
     f2.innerHTML = '<span>Bot difficulty</span>';
     f2.appendChild(seg);
     body.appendChild(f2);
+  }
+
+  private renderRanked(body: HTMLElement) {
+    const p = this.d.profile;
+    const f = document.createElement('div');
+    f.className = 'field';
+    f.innerHTML = '<span>Ranked battle</span>';
+    const box = document.createElement('div');
+    box.className = 'ranked';
+    if (p.level < RANKED_LEVEL) {
+      box.innerHTML = `<div class="hint">Reach Lv ${RANKED_LEVEL} to unlock Ranked battles.</div>`;
+    } else {
+      const mode = rankedMode();
+      const stages = currentRotation()[mode];
+      box.innerHTML = `<div class="rk-row"><span class="rank-badge r${Math.floor(p.rank / 3)}">${RANKS[p.rank]}</span>
+        <div class="rk-meter"><div class="rk-fill" style="width:${p.rankPts}%"></div></div></div>
+        <div class="hint">Now: <b>${MODE_NAMES[mode]}</b> on ${stages[0].name} / ${stages[1].name}. Win to fill your meter, lose and it drains. Bots get tougher as you climb.</div>`;
+      const btn = document.createElement('button');
+      btn.className = 'blob-btn small ranked-btn';
+      btn.textContent = 'RANKED BATTLE!';
+      btn.onclick = () => {
+        this.d.sfx.ui();
+        $('shop').classList.add('hidden');
+        this.d.onBattle(true);
+      };
+      box.appendChild(btn);
+    }
+    f.appendChild(box);
+    body.appendChild(f);
   }
 
   private renderFriends(body: HTMLElement, room: Room | null) {

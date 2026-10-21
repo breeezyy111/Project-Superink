@@ -110,7 +110,8 @@ export class Match extends InkWorld {
   readonly net: NetOpts | null;
   /** online host: told about splats and hits so they can be sent to everyone */
   netHooks: { splat?(target: Character, attacker: Character | null): void; hit?(attacker: Character): void } = {};
-  private difficulty: Difficulty;
+  readonly ranked: boolean;
+  private skillRange: [number, number];
   /** online client: final numbers from the host */
   netFinal: NetFinal | null = null;
   private lastBeep = 99;
@@ -121,11 +122,12 @@ export class Match extends InkWorld {
     sfx: Sfx,
     private controller: PlayerController | null,
     readonly events: MatchEvents,
-    opts: { look: Look; kit: Kit; name: string; demo?: boolean; difficulty: Difficulty; mode?: Mode; net?: NetOpts },
+    opts: { look: Look; kit: Kit; name: string; demo?: boolean; difficulty: Difficulty; mode?: Mode; net?: NetOpts; ranked?: boolean; skill?: [number, number] },
   ) {
     super(r.scene, stage, sfx);
     this.mode = opts.mode ?? 'turf';
-    this.difficulty = opts.difficulty;
+    this.ranked = !!opts.ranked;
+    this.skillRange = opts.skill ?? SKILL[opts.difficulty];
     this.net = opts.net ?? null;
     this.authority = this.net?.role !== 'client';
     this.pair = this.net ? INK_PAIRS[this.net.pairIndex % INK_PAIRS.length] : INK_PAIRS[Math.floor(Math.random() * INK_PAIRS.length)];
@@ -135,7 +137,7 @@ export class Match extends InkWorld {
     if (this.mode === 'tower') this.tower = new TowerControl(r.scene, stage.def, this.physics, (t) => this.colorOf(t));
     this.projectiles.setColors(this.pair.alpha, this.pair.bravo);
 
-    const [lo, hi] = SKILL[opts.difficulty];
+    const [lo, hi] = this.skillRange;
     if (this.net) {
       const net = this.net;
       net.roster.forEach((slot, i) => {
@@ -230,7 +232,7 @@ export class Match extends InkWorld {
   replaceWithBot(ch: Character) {
     if (!ch.net) return;
     ch.net = null;
-    const [lo, hi] = SKILL[this.difficulty];
+    const [lo, hi] = this.skillRange;
     const b = new Bot(ch, this, this.stage.info, THREE.MathUtils.lerp(lo, hi, 0.5), this.zones, this.tower);
     b.reset();
     this.bots.push(b);

@@ -81,11 +81,12 @@
         <div id="profile-chip" class="profile-chip" title="Account">
           <div class="lv">Lv <b id="pc-level">1</b></div>
           <div class="pc-body">
-            <div id="pc-name" class="pc-name">Player</div>
+            <div class="pc-top"><div id="pc-name" class="pc-name">Player</div><span id="pc-rank"></span></div>
             <div class="xp-bar"><div id="pc-xp"></div></div>
           </div>
           <div class="coins"><span class="coin-ico"></span><b id="pc-coins">0</b></div>
         </div>
+        <div id="daily-panel" class="daily-panel"></div>
         <button id="btn-news" class="news-btn" title="Splashburg News"><span class="live"></span>NEWS</button>
         <div id="hub-prompt" class="hub-prompt hidden"><kbd>E</kbd> <span id="hub-prompt-text">Enter</span></div>
         <div class="hub-hint">WASD move • Mouse look • Click shoot • Shift swim • Walk up to a shop and press <kbd>E</kbd></div>
@@ -189,6 +190,8 @@
             <div class="res-bar"><div id="res-b" class="fill"></div><span id="res-b-pct">0%</span></div>
           </div>
           <div id="res-rewards" class="res-rewards"></div>
+          <div id="res-rank" class="res-rank hidden"></div>
+          <div id="res-daily" class="res-daily"></div>
           <table id="res-table" class="res-table"></table>
           <div class="row-btns">
             <button id="btn-again" class="blob-btn">BATTLE AGAIN</button>

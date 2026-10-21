@@ -21,6 +21,8 @@ import { ShopUI } from './ui/Shops';
 import { News } from './ui/News';
 import { judgeJellySvg } from './ui/Mascots';
 import { currentRotation, onRotation, ROTATION_BONUS } from './game/rotation';
+import { applyRanked, RankResult, RANKS, rankedMode, rankedSkill } from './game/ranked';
+import { currentDaily, DailyView, recordBattle, viewDaily } from './game/daily';
 import { Room, Msg } from './online/Room';
 import { ClientSync, HostSync } from './online/NetGame';
 import type { NetOpts, RosterSlot, Mode } from './game/Match';
@@ -136,7 +138,7 @@ async function boot() {
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
-  const newMatch = (st: Stage, demo: boolean, net?: NetOpts, netMode?: Mode) => {
+  const newMatch = (st: Stage, demo: boolean, net?: NetOpts, netMode?: Mode, ranked = false) => {
     match = new Match(r, st, sfx, demo ? null : controller, {
       onFeed: (t, k) => hud.pushFeed(t, k),
       onPlayerSplatted: (by) => hud.showSplatted(by),
@@ -179,7 +181,7 @@ async function boot() {
         hud.bigText('OVERTIME!', true, 1600);
         sfx.whistle();
       },
-    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty, net,
+    }, { look: profile.look, kit: kit(profile.kit), name: profile.name || 'Player', demo, difficulty: profile.difficulty, net, ranked, skill: ranked ? rankedSkill(profile.rank) : undefined,
       mode: netMode ?? (demo && !params.get('mode') ? 'turf' : soloMode()) });
     hud.setup(match);
     if (!demo) minimap.setup(match);
@@ -257,6 +259,13 @@ async function boot() {
     $('pc-name').textContent = profile.name;
     $('pc-coins').textContent = profile.coins.toLocaleString();
     $('pc-xp').style.width = `${Math.min(100, (profile.xp / xpToNext(profile.level)) * 100)}%`;
+    $('pc-rank').innerHTML = profile.level >= 3 ? rankBadge(profile.rank) : '';
+    // today's challenges
+    profile.daily = currentDaily(profile.daily);
+    $('daily-panel').innerHTML = `<div class="dp-title">Daily challenges</div>` + viewDaily(profile.daily)
+      .map((d) => `<div class="dp ${d.done ? 'done' : ''}"><div class="dp-text">${d.done ? '✔ ' : ''}${d.text}</div>
+        <div class="dp-bar"><div style="width:${(d.progress / d.goal) * 100}%"></div></div><div class="dp-coins"><span class="coin-ico"></span>${d.coins}</div></div>`)
+      .join('');
   };
 
   const goHub = async (lock = false) => {
@@ -321,10 +330,10 @@ async function boot() {
       show('hub-hud', true);
       controller.requestLock();
     },
-    onBattle: () => {
+    onBattle: (ranked = false) => {
       unlockAudio();
       if (room?.isHost) startRoomMatch();
-      else if (!room) startMatch();
+      else if (!room) startMatch(ranked);
     },
     friends: {
       room: () => room,
@@ -346,18 +355,22 @@ async function boot() {
   });
 
   // ---------- match ----------
-  const startMatch = async () => {
+  let lastRanked = false;
+  const startMatch = async (ranked = false) => {
     if (busy) return;
     busy = true;
+    lastRanked = ranked;
     loading(true);
     hideAll();
-    const def = pickStage();
+    // Ranked: this rotation's ranked mode on one of its stages
+    const mode: Mode = ranked ? rankedMode() : params.has('demo') && !params.get('mode') ? 'turf' : soloMode();
+    const def = ranked ? currentRotation()[mode][Math.floor(Math.random() * 2)] : pickStage();
     lastStageId = def.id;
-    const st = await loadStage(def, params.has('demo') && !params.get('mode') ? 'turf' : soloMode());
+    const st = await loadStage(def, mode);
     screen = 'match';
     paused = false;
     show('hud', true);
-    newMatch(st, params.has('demo'));
+    newMatch(st, params.has('demo'), undefined, ranked ? mode : undefined, ranked);
     music.playRandomBattle();
     loading(false);
     busy = false;
@@ -555,6 +568,46 @@ async function boot() {
     controller.requestLock();
   };
 
+  // ---------- ranked + daily on the results screen ----------
+  function rankBadge(r: number) {
+    return `<span class="rank-badge r${Math.floor(r / 3)}">${RANKS[r]}</span>`;
+  }
+  const renderRank = (res: RankResult | null) => {
+    const el = $('res-rank');
+    el.classList.toggle('hidden', !res);
+    if (!res) return;
+    const sign = res.delta >= 0 ? '+' : '';
+    el.innerHTML = `<div class="rk-row">${rankBadge(res.before)}<div class="rk-meter"><div class="rk-fill" style="width:${res.ptsBefore}%"></div></div>
+      <span class="rk-delta ${res.delta >= 0 ? 'up' : 'down'}">${sign}${res.delta}</span></div>`;
+    setTimeout(() => {
+      const fill = el.querySelector('.rk-fill') as HTMLElement;
+      if (res.rankUp || res.rankDown) {
+        fill.style.width = res.rankUp ? '100%' : '0%';
+        setTimeout(() => {
+          el.querySelector('.rank-badge')!.outerHTML = rankBadge(res.after);
+          fill.style.transition = 'none';
+          fill.style.width = `${res.rankUp ? 0 : 100}%`;
+          void fill.offsetWidth;
+          fill.style.transition = '';
+          fill.style.width = `${res.ptsAfter}%`;
+          const t = document.createElement('div');
+          t.className = `rk-banner ${res.rankUp ? 'up' : 'down'}`;
+          t.textContent = res.rankUp ? `RANK UP! ${RANKS[res.after]}` : `Rank down... ${RANKS[res.after]}`;
+          el.appendChild(t);
+          if (res.rankUp) sfx.specialReady();
+        }, 900);
+      } else fill.style.width = `${res.ptsAfter}%`;
+    }, 2600);
+  };
+  const renderDaily = (finished: DailyView[]) => {
+    const el = $('res-daily');
+    const list = viewDaily(profile.daily!);
+    el.innerHTML = `<div class="dl-title">Daily challenges</div>` + list
+      .map((d) => `<div class="dl ${d.done ? 'done' : ''}"><span>${d.done ? '✔ ' : ''}${d.text}</span><b>${d.done ? 'DONE' : `${d.progress.toLocaleString()}/${d.goal.toLocaleString()}`}</b></div>`)
+      .join('');
+    for (const f of finished) setTimeout(() => toast(`Challenge done: ${f.text}! +${f.coins} coins`), 2800);
+  };
+
   // ---------- results ----------
   const showResults = () => {
     if (!match) return;
@@ -569,7 +622,7 @@ async function boot() {
     const mine = m.colorOf(me), theirs = m.colorOf(them);
     show('results', true);
     show('hud', false);
-    $('res-stage').textContent = `${MODE_NAMES[m.mode]} • ${m.stage.def.name}`;
+    $('res-stage').textContent = `${m.ranked ? 'Ranked • ' : ''}${MODE_NAMES[m.mode]} • ${m.stage.def.name}`;
     const again = $('btn-again') as HTMLButtonElement;
     again.disabled = !!room && !room.isHost;
     again.textContent = room ? (room.isHost ? 'BATTLE AGAIN' : 'WAITING FOR HOST...') : 'BATTLE AGAIN';
@@ -605,7 +658,21 @@ async function boot() {
     const xp = Math.round(sum.paintedM2 * 2 + (sum.win ? 300 : 100));
     profile.coins += coins;
     const levels = addXp(profile, xp);
+    // ranked meter
+    const rank = m.ranked ? applyRanked(profile.rank, profile.rankPts, sum.win, sum.ko) : null;
+    if (rank) {
+      profile.rank = rank.after;
+      profile.rankPts = rank.ptsAfter;
+    }
+    // daily challenges
+    profile.daily = currentDaily(profile.daily);
+    const finished = recordBattle(profile.daily, {
+      win: sum.win, mode: m.mode, ranked: m.ranked, paintedP: sum.paintedM2, splats: sum.splats, specials: m.player.kitState.specialUses,
+    });
+    for (const f of finished) profile.coins += f.coins;
     save();
+    renderRank(rank);
+    renderDaily(finished);
     const rw = $('res-rewards');
     rw.innerHTML = '';
     setTimeout(() => {
@@ -645,7 +712,7 @@ async function boot() {
   $('btn-again').addEventListener('click', () => {
     sfx.ui();
     if (room?.isHost) startRoomMatch();
-    else if (!room) startMatch();
+    else if (!room) startMatch(lastRanked);
   });
   $('btn-hub').addEventListener('click', () => {
     sfx.ui();
@@ -750,7 +817,7 @@ async function boot() {
 
   tick();
   if (params.has('play')) {
-    await startMatch();
+    await startMatch(params.has('ranked'));
   } else if (params.has('hub')) {
     await goHub();
   } else {
