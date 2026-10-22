@@ -3,7 +3,7 @@ import { InkSystem } from '../ink/InkSystem';
 import type { Character } from './Character';
 import type { GameCtx } from './types';
 
-export type WeaponKind = 'shooter' | 'roller' | 'charger' | 'blaster' | 'slosher' | 'splatling' | 'dualies';
+export type WeaponKind = 'shooter' | 'roller' | 'charger' | 'blaster' | 'slosher' | 'splatling' | 'dualies' | 'god';
 
 export interface WeaponSpec {
   kind: WeaponKind;
@@ -49,6 +49,12 @@ export const WEAPONS: Record<WeaponKind, WeaponSpec> = {
     name: 'Whirl Splatling',
     blurb: 'Hold to spin up, release to unload a long stream of fast shots.',
     stats: { range: 0.8, damage: 0.6, fireRate: 1.0, mobility: 0.4 },
+  },
+  god: {
+    kind: 'god',
+    name: 'Golden Godblaster',
+    blurb: 'Admin only. Never runs dry, splats in one hit and paints everything it touches.',
+    stats: { range: 1, damage: 1, fireRate: 1, mobility: 1 },
   },
   dualies: {
     kind: 'dualies',
@@ -203,6 +209,14 @@ export class WeaponState {
         }
         break;
 
+      case 'god':
+        // admin weapon: rapid exploding shots, no ink cost
+        if (fire && this.cooldown <= 0) {
+          this.cooldown = 0.07;
+          this.fireGod(ch, ctx);
+        }
+        break;
+
       case 'blaster':
         if (fire && this.cooldown <= 0 && ch.ink >= 8) {
           this.cooldown = 0.8;
@@ -296,6 +310,17 @@ export class WeaponState {
     ctx.projectiles.spawn({
       pos: muzzle, vel: dir.multiplyScalar(38), team: ch.team, owner: ch,
       damage: 28, paintR: 0.7, size: 0.13, gravDelay: 0.2, drips: true, falloff: 0.6,
+    });
+    ctx.sfx.shoot(ctx.listener.distanceTo(muzzle), ch.isPlayer);
+  }
+
+  private fireGod(ch: Character, ctx: GameCtx) {
+    const muzzle = ch.muzzle(tmp);
+    const dir = ch.aimDirFrom(muzzle, tmp2);
+    ctx.projectiles.spawn({
+      pos: muzzle, vel: dir.multiplyScalar(55), team: ch.team, owner: ch,
+      damage: 999, paintR: 1.6, size: 0.3, gravDelay: 0.5, falloff: 1,
+      explode: { radius: 3.2, max: 999, min: 999 }, maxAge: 2,
     });
     ctx.sfx.shoot(ctx.listener.distanceTo(muzzle), ch.isPlayer);
   }
@@ -511,6 +536,24 @@ export function buildWeaponModel(kind: WeaponKind, inkMat: THREE.Material): { mo
     };
     g.add(pistol());
     g.userData.offhand = pistol();
+  } else if (kind === 'god') {
+    // golden blaster with a glowing core
+    const gold = new THREE.MeshPhysicalMaterial({ color: '#ffd23f', metalness: 0.8, roughness: 0.2, clearcoat: 1 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.42, 16), gold);
+    body.position.y = -0.18;
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 14), new THREE.MeshPhysicalMaterial({ color: '#ffffff', emissive: '#fff2a8', emissiveIntensity: 1.2, clearcoat: 1 }));
+    core.position.set(0, -0.12, 0.12);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.3, 16), gold);
+    barrel.position.y = -0.5;
+    const ring1 = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.025, 8, 24), inkMat);
+    ring1.rotation.x = Math.PI / 2;
+    ring1.position.y = -0.42;
+    const ring2 = ring1.clone();
+    ring2.position.y = -0.58;
+    const fin = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.2, 4), gold);
+    fin.position.set(0, -0.2, -0.13);
+    fin.rotation.x = Math.PI;
+    g.add(body, core, barrel, ring1, ring2, fin);
   } else if (kind === 'blaster') {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.36, 16), glossy('#f2f2f2'));
     body.position.y = -0.14;

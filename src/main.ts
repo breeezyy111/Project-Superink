@@ -19,6 +19,9 @@ import { Account, friendlyError } from './online/Account';
 import { AccountPanel, AuthUI, toast } from './ui/AuthUI';
 import { ShopUI } from './ui/Shops';
 import { StoryUI } from './ui/StoryUI';
+import { AdminPanel } from './ui/AdminPanel';
+import { cheats, resetCheats } from './game/cheats';
+import { GEAR, GOD_KIT } from './game/items';
 import { StoryRun } from './story/StoryRun';
 import { LEVELS, LevelDef } from './story/levels';
 import { News } from './ui/News';
@@ -261,12 +264,19 @@ async function boot() {
     accountPanel.show();
   });
 
+  // admin account (see the admin section below)
+  const ADMIN_NAMES = ['breezy'];
+  let adminHinted = false;
   const updateProfileChip = () => {
     $('pc-level').textContent = String(profile.level);
     $('pc-name').textContent = profile.name;
     $('pc-coins').textContent = profile.coins.toLocaleString();
     $('pc-xp').style.width = `${Math.min(100, (profile.xp / xpToNext(profile.level)) * 100)}%`;
-    $('pc-rank').innerHTML = profile.level >= 3 ? rankBadge(profile.rank) : '';
+    $('pc-rank').innerHTML = (profile.level >= 3 ? rankBadge(profile.rank) : '') + (isAdmin() ? '<span class="admin-badge" title="Press F2 for the admin panel">ADMIN</span>' : '');
+    if (isAdmin() && !adminHinted) {
+      adminHinted = true;
+      setTimeout(() => toast('Welcome, Breezy! Press F2 for your admin panel.'), 1200);
+    }
     // today's challenges
     profile.daily = currentDaily(profile.daily);
     $('daily-panel').innerHTML = `<div class="dp-title">Daily challenges</div>` + viewDaily(profile.daily)
@@ -675,6 +685,115 @@ async function boot() {
     else goHub(true);
   };
 
+  // ---------- admin (only the signed-in "Breezy" account) ----------
+  function isAdmin() {
+    return account.mode === 'account' && [account.displayName, account.username].some((n) => ADMIN_NAMES.includes((n || '').toLowerCase()));
+  }
+  const livePlayer = () => (screen === 'story' ? story?.player : screen === 'match' ? match?.player : screen === 'hub' ? hub?.player : null) ?? null;
+  const admin = new AdminPanel(sfx, {
+    isAdmin,
+    where: () => (screen === 'match' && match ? 'battle' : screen === 'story' ? 'story' : screen === 'hub' ? 'plaza' : 'other'),
+    onOpen: () => controller.releaseLock(),
+    onClose: () => {
+      if (screen === 'match' || screen === 'story' || (screen === 'hub' && !shop.open)) controller.requestLock();
+    },
+    equipGodGun: () => {
+      if (!profile.owned.includes(GOD_KIT.id)) profile.owned.push(GOD_KIT.id);
+      profile.kit = GOD_KIT.id;
+      save();
+      if (hub) hub.refreshPlayer(profile.look, GOD_KIT, profile.name);
+      const p = screen === 'match' ? match?.player : screen === 'story' ? story?.player : null;
+      p?.setKit(GOD_KIT);
+      if (match && screen === 'match') hud.setup(match);
+      if (story && screen === 'story') hud.setup(story);
+    },
+    addCoins: (n) => {
+      profile.coins += n;
+      save();
+      updateProfileChip();
+    },
+    maxLevel: () => {
+      profile.level = 30;
+      profile.xp = 0;
+      save();
+      updateProfileChip();
+    },
+    unlockAll: () => {
+      for (const id of [...KITS.map((k) => k.id), ...GEAR.map((g) => g.id)]) if (!profile.owned.includes(id)) profile.owned.push(id);
+      save();
+    },
+    maxRank: () => {
+      profile.rank = RANKS.length - 1;
+      profile.rankPts = 50;
+      save();
+      updateProfileChip();
+    },
+    clearStory: () => {
+      for (const l of LEVELS) if (!profile.story.includes(l.id)) profile.story.push(l.id);
+      profile.storyIntro = true;
+      save();
+    },
+    fillSpecial: () => {
+      const p = livePlayer();
+      if (p) p.special = 100;
+    },
+    paintMap: () => {
+      const m = match;
+      if (!m) return;
+      const b = m.stage.info.bounds;
+      for (let x = b.minX; x <= b.maxX; x += 2.2) {
+        for (let z = b.minZ; z <= b.maxZ; z += 2.2) {
+          const hit = m.physics.raycast(new THREE.Vector3(x, 30, z), new THREE.Vector3(0, -1, 0), 60);
+          if (hit && hit.inkable) m.paintBy(m.player, [{ x: hit.point.x, y: hit.point.y, z: hit.point.z, r: 2 }]);
+        }
+      }
+    },
+    splatEnemies: () => {
+      const w = screen === 'story' ? story : match;
+      if (!w) return;
+      for (const c of w.characters) {
+        if (!c.alive || c.team === w.player.team) continue;
+        // Dr. Gloop only takes damage while dizzy
+        const boss = c as unknown as { stunned?: boolean };
+        if (boss.stunned !== undefined) {
+          boss.stunned = true;
+          c.hp = 0.01;
+        }
+        w.damage(c, 9999, w.player);
+      }
+    },
+    winNow: () => {
+      const m = match;
+      if (!m || m.phase !== 'play') return;
+      admin.actions.paintMap();
+      const me = m.player.team;
+      if (m.zones) m.zones.count[me] = 0;
+      if (m.tower) {
+        m.tower.best[me] = 1;
+        m.tower.count[me] = 0;
+      }
+      m.timeLeft = Math.min(m.timeLeft, 0.05);
+    },
+    skipToGoal: () => {
+      const g = (story as unknown as { goal?: { pos: THREE.Vector3 } } | null)?.goal;
+      if (story && g) {
+        story.player.pos.copy(g.pos).setY(g.pos.y + 0.2);
+        story.player.vel.set(0, 0, 0);
+      } else toast('Beat Dr. Gloop first, then the Orb appears.');
+    },
+  }, (t) => toast(t));
+  // infinite ink / special for the admin's own Inkfin
+  const applyCheats = () => {
+    if (!isAdmin()) {
+      if (cheats.god || cheats.oneHit || cheats.speed !== 1) resetCheats();
+      return;
+    }
+    const p = livePlayer();
+    if (!p) return;
+    if (cheats.infiniteInk) p.ink = 100;
+    if (cheats.infiniteSpecial && p.specialT <= 0) p.special = 100;
+  };
+
   // ---------- ranked + daily on the results screen ----------
   function rankBadge(r: number) {
     return `<span class="rank-badge r${Math.floor(r / 3)}">${RANKS[r]}</span>`;
@@ -833,6 +952,7 @@ async function boot() {
     requestAnimationFrame(tick);
     timer.update();
     const rawDt = timer.getDelta();
+    applyCheats();
     const dt = Math.min(rawDt, 1 / 20);
     // auto-tune graphics once if the game is struggling (only until the player picks a level themselves)
     if ((screen === 'hub' || screen === 'match') && !profile.qualityChosen && r.quality !== 'low' && !document.hidden) {
@@ -851,7 +971,7 @@ async function boot() {
         }
       }
     }
-    controller.allowLock = ((screen === 'match' || (screen === 'story' && story?.phase === 'play')) && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open && !news.open);
+    controller.allowLock = !admin.open && ((screen === 'match' || (screen === 'story' && story?.phase === 'play')) && !paused && !params.has('demo')) || (screen === 'hub' && !shop.open && !accountPanel.open && !auth.open && !news.open);
 
     if (screen === 'hub' && hub) {
       const overlay = auth.open || accountPanel.open || news.open;
