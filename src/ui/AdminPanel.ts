@@ -34,7 +34,7 @@ const TOGGLES: [Toggle, string, string][] = [
   ['freezeBots', 'Freeze bots', 'Enemies stand still'],
 ];
 
-/** Breezy's overpowered admin panel. Opens with F2 or the ` key, only for the admin account. */
+/** The overpowered admin panel. Opens with F2 or the ` key, only for the admin account. */
 export class AdminPanel {
   private root: HTMLElement;
   private body: HTMLElement;
@@ -47,7 +47,7 @@ export class AdminPanel {
     this.root.className = 'admin hidden';
     this.root.innerHTML = `
       <div class="admin-card" role="dialog" aria-label="Admin panel">
-        <div class="admin-head"><span class="admin-tag">ADMIN</span><h2>Breezy's Control Panel</h2>
+        <div class="admin-head"><span class="admin-tag">ADMIN</span><h2>Admin Control Panel</h2>
           <button class="admin-x" id="admin-close" aria-label="Close admin panel">✕</button></div>
         <div class="admin-body"></div>
         <div class="admin-foot">F2 or <kbd>\`</kbd> to open and close. Cheats only affect you.</div>
