@@ -265,7 +265,8 @@ async function boot() {
   });
 
   // admin account (see the admin section below)
-  const ADMIN_NAMES = ['breezy'];
+  // lil_al is an admin for now too
+  const ADMIN_NAMES = ['breezy', 'lil_al'];
   let adminHinted = false;
   const updateProfileChip = () => {
     $('pc-level').textContent = String(profile.level);
@@ -275,7 +276,7 @@ async function boot() {
     $('pc-rank').innerHTML = (profile.level >= 3 ? rankBadge(profile.rank) : '') + (isAdmin() ? '<span class="admin-badge" title="Press F2 for the admin panel">ADMIN</span>' : '');
     if (isAdmin() && !adminHinted) {
       adminHinted = true;
-      setTimeout(() => toast('Welcome, Breezy! Press F2 for your admin panel.'), 1200);
+      setTimeout(() => toast(`Welcome, ${account.displayName || account.username}! Press F2 for your admin panel.`), 1200);
     }
     // today's challenges
     profile.daily = currentDaily(profile.daily);
