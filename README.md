@@ -30,6 +30,10 @@ When you press PLAY, an optional (but recommended) **Splashburg ID** page lets y
 The game uses PlayFab title `90E97` and needs no extra PlayFab setup. See [`playfab/SETUP.md`](playfab/SETUP.md).
 If PlayFab can't be reached, the game still runs and saves progress in the browser only.
 
+## Admin
+
+Signing in with the **Breezy** Splashburg ID unlocks an admin panel (press **F2** or **`**): the Golden Godblaster, god mode, one-hit splats, infinite ink and special, freeze bots, speed and jump boosts, coins, levels, ranks, unlocks and instant wins. Cheats only affect the admin's own Inkfin.
+
 ## Controls (mouse + keyboard)
 
 | Action | Input |

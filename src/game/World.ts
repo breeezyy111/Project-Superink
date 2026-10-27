@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cheats } from './cheats';
 import { SPECIAL_PER_CELL, Team } from '../config';
 import { InkSystem, SplatCircle } from '../ink/InkSystem';
 import type { Sfx } from '../audio/Sfx';
@@ -41,6 +42,9 @@ export abstract class InkWorld implements GameCtx {
 
   damage(target: Character, amount: number, attacker: Character) {
     if (!this.authority) return;
+    // admin cheats (only ever the local admin's own Inkfin)
+    if (target.isPlayer && cheats.god) return;
+    if (attacker.isPlayer && cheats.oneHit) amount = 9999;
     if (!target.alive || target.team === attacker.team) return;
     const died = target.hurt(amount, attacker);
     this.onHit(target, attacker, died);

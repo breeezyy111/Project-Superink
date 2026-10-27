@@ -84,7 +84,11 @@ export const KITS: Kit[] = [
   { id: 'kit_splatling', main: 'splatling', sub: 'mine', special: 'squall', price: 3000, level: 5 },
 ];
 
+/** Admin-only kit: never sold, never given to bots. */
+export const GOD_KIT: Kit = { id: 'kit_god', main: 'god', sub: 'pop', special: 'jet', price: 0, level: 1 };
+
 export function kit(id: string): Kit {
+  if (id === GOD_KIT.id) return GOD_KIT;
   return KITS.find((k) => k.id === id) ?? KITS[0];
 }
 

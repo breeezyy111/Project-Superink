@@ -11,6 +11,7 @@ import { Kit, kit as kitById } from '../game/items';
 import { randomLook } from '../game/Match';
 import type { PlayerController } from '../game/PlayerController';
 import { InkWorld } from '../game/World';
+import { cheats } from '../game/cheats';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import type { LevelDef } from './levels';
 import { checkpointModel, drGloopModel, gloopieModel, orbModel, padModel } from './models';
@@ -290,12 +291,16 @@ export class StoryRun extends InkWorld {
 
     this.updateMovers(dt);
     this.updatePads(dt);
-    for (const t of this.turrets) this.turretBrain(t, dt);
+    const frozen = cheats.freezeBots;
+    for (const t of this.turrets) {
+      this.turretBrain(t, dt);
+      if (frozen) t.ch.input.fire = false;
+    }
     for (const b of this.bots) {
-      if (playing && b.ch.alive && b.ch.pos.distanceTo(p.pos) < 26) b.update(dt);
+      if (playing && !frozen && b.ch.alive && b.ch.pos.distanceTo(p.pos) < 26) b.update(dt);
       else b.idle();
     }
-    if (this.boss) this.bossBrain(dt);
+    if (this.boss && !frozen) this.bossBrain(dt);
 
     // falling into the goo
     for (const c of this.characters) {

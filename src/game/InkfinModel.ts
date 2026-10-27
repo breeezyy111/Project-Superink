@@ -185,6 +185,47 @@ function frillGeometry(radius: number, width: number, start: number, end: number
   return geo;
 }
 
+/** Smooth limb: round-ended and narrowing from r0 to r1, hanging down -y from its origin. */
+function taperedLimb(r0: number, r1: number, len: number) {
+  const pts: THREE.Vector2[] = [];
+  for (let i = 0; i <= 8; i++) {
+    const a = (i / 8) * Math.PI / 2;
+    pts.push(new THREE.Vector2(Math.sin(a) * r0, Math.cos(a) * r0));
+  }
+  for (let i = 1; i <= 6; i++) {
+    const t = i / 6;
+    const e = t * t * (3 - 2 * t);
+    pts.push(new THREE.Vector2(r0 + (r1 - r0) * e, -t * len));
+  }
+  for (let i = 1; i <= 8; i++) {
+    const a = (i / 8) * Math.PI / 2;
+    pts.push(new THREE.Vector2(Math.cos(a) * r1, -len - Math.sin(a) * r1));
+  }
+  return new THREE.LatheGeometry(pts.reverse(), 24);
+}
+
+/** Smooth tapered tentacle along a curve, with a rounded tip. */
+function tentacleGeometry(points: [number, number, number][], r0: number, r1: number) {
+  const path = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)));
+  const seg = 28, rad = 12;
+  const geo = new THREE.TubeGeometry(path, seg, 1, rad, false);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  for (let i = 0; i <= seg; i++) {
+    const t = i / seg;
+    const c = path.getPointAt(t);
+    let r = r0 + (r1 - r0) * t;
+    if (t > 0.85) r *= Math.sqrt(Math.max(0, 1 - ((t - 0.85) / 0.15) ** 2)) * 0.97 + 0.03;
+    for (let j = 0; j <= rad; j++) {
+      const k = i * (rad + 1) + j;
+      v.fromBufferAttribute(pos, k).sub(c).multiplyScalar(r).add(c);
+      pos.setXYZ(k, v.x, v.y, v.z);
+    }
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
 function glossy(color: THREE.ColorRepresentation, extra: THREE.MeshPhysicalMaterialParameters = {}) {
   return new THREE.MeshPhysicalMaterial({ color, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.1, ...extra });
 }
@@ -246,7 +287,7 @@ export class InkfinModel {
     const shoeItem = gear(L.shoes);
     const ctex = clothTexture(cloth);
     const shirt = new THREE.MeshStandardMaterial({ color: ctex ? '#ffffff' : cloth.color, map: ctex, roughness: 0.75 });
-    const pants = new THREE.MeshStandardMaterial({ color: '#2a2d3a', roughness: 0.7 });
+    const pants = new THREE.MeshStandardMaterial({ color: '#16151c', roughness: 0.65 });
     const shoe = shoeItem.style === 'slipon'
       ? new THREE.MeshStandardMaterial({ map: checker(), roughness: 0.6 })
       : glossy(shoeItem.color, { roughness: 0.4 });
@@ -258,8 +299,8 @@ export class InkfinModel {
     for (const s of [-1, 1]) {
       const hip = new THREE.Group();
       hip.position.set(0.1 * s, 0.5, 0);
-      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.26, 6, 12), skin);
-      leg.position.y = -0.2;
+      const leg = new THREE.Mesh(taperedLimb(0.072, 0.054, 0.31), skin);
+      leg.position.y = -0.04;
       hip.add(leg);
       const short = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.105, 0.18, 14), pants);
       short.position.y = -0.03;
@@ -267,12 +308,12 @@ export class InkfinModel {
       const so = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.072, 0.08, 12), sock);
       so.position.y = -0.37;
       hip.add(so);
-      const foot = new THREE.Mesh(new THREE.CapsuleGeometry(0.088, 0.14, 6, 12), shoe);
+      const foot = new THREE.Mesh(new THREE.CapsuleGeometry(0.088, 0.14, 10, 20), shoe);
       foot.rotation.x = Math.PI / 2;
       foot.scale.set(1, 1, 0.85);
       foot.position.set(0, -0.43, 0.04);
       hip.add(foot);
-      const sl = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.15, 4, 12), sole);
+      const sl = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.15, 6, 20), sole);
       sl.rotation.x = Math.PI / 2;
       sl.scale.set(1.05, 1, 0.3);
       sl.position.set(0, -0.485, 0.04);
@@ -361,16 +402,20 @@ export class InkfinModel {
     for (const s of [-1, 1]) {
       const sh = new THREE.Group();
       sh.position.set(0.21 * s, 0.33, 0);
-      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.18, 6, 10), skin);
-      arm.position.y = -0.13;
+      const arm = new THREE.Mesh(taperedLimb(0.05, 0.042, 0.2), skin);
+      arm.position.y = -0.03;
       sh.add(arm);
       const sleeve = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 10), cloth.style === 'tank' ? skin : shirt);
       sleeve.scale.set(1, 0.9, 1);
       sleeve.position.y = -0.02;
       sh.add(sleeve);
-      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.068, 12, 10), skin);
-      hand.position.y = -0.27;
-      sh.add(hand);
+      // round mitten hand with a little thumb
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.062, 20, 14), skin);
+      hand.scale.set(0.95, 1.1, 0.85);
+      hand.position.y = -0.28;
+      const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), skin);
+      thumb.position.set(-0.042 * s, -0.26, 0.03);
+      sh.add(hand, thumb);
       this.torso.add(sh);
       this.arms.push(sh);
     }
@@ -383,9 +428,17 @@ export class InkfinModel {
     // head: big and round
     this.head = new THREE.Group();
     this.head.position.y = 0.8;
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.33, 32, 24), skin);
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.33, 40, 28), skin);
     skull.scale.set(1, 0.93, 0.95);
     this.head.add(skull);
+    // pointed ears
+    for (const s of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.17, 16), skin);
+      ear.rotation.z = -s * 1.3;
+      ear.scale.z = 0.45;
+      ear.position.set(0.33 * s, -0.04, -0.01);
+      this.head.add(ear);
+    }
     // eyes
     for (const s of [-1, 1]) {
       const eye = new THREE.Mesh(
@@ -460,23 +513,16 @@ export class InkfinModel {
     cap.position.set(0, 0.015, -0.01);
     cap.rotation.x = -0.32;
     this.head.add(cap);
-    // bangs: rounded lobes over the forehead
-    for (let i = -2; i <= 2; i++) {
-      const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), hair);
-      lobe.scale.set(1.15, 0.8, 0.55);
-      lobe.position.set(i * 0.085, 0.16 - Math.abs(i) * 0.035, 0.27 - Math.abs(i) * 0.04);
-      lobe.rotation.y = i * 0.3;
-      this.head.add(lobe);
-    }
     const style = this.look.hair;
     if (style === 0) {
-      // Frill Crown: two layers of wavy fins hanging around the back and sides
-      const f1 = new THREE.Mesh(frillGeometry(0.31, 0.24, Math.PI * 0.28, Math.PI * 1.72, 9, 2.0), hair);
-      f1.position.y = 0.06;
+      // Frill Crown: a neat little frill along the hairline + two tentacles behind the ears
+      const f1 = new THREE.Mesh(frillGeometry(0.325, 0.075, Math.PI * 0.32, Math.PI * 1.68, 12, 0.6), hair);
+      f1.position.y = 0.05;
       this.head.add(f1);
-      const f2 = new THREE.Mesh(frillGeometry(0.28, 0.16, Math.PI * 0.4, Math.PI * 1.6, 11, 1.1), hair);
-      f2.position.y = 0.2;
-      this.head.add(f2);
+      for (const s of [-1, 1]) {
+        const t = new THREE.Mesh(tentacleGeometry([[0.27 * s, 0.03, -0.07], [0.34 * s, -0.15, -0.09], [0.31 * s, -0.35, -0.05], [0.25 * s, -0.48, 0]], 0.078, 0.055), hair);
+        this.head.add(t);
+      }
     } else if (style === 1) {
       // Swoop Fin: short frill + a long frilled tail sweeping down the back
       const f1 = new THREE.Mesh(frillGeometry(0.31, 0.14, Math.PI * 0.35, Math.PI * 1.65, 9, 1.6), hair);

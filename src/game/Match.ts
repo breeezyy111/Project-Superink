@@ -11,6 +11,7 @@ import { gearIn, Kit, kit as kitById, KITS } from './items';
 import type { PlayerController } from './PlayerController';
 import type { Difficulty } from './profile';
 import { InkWorld } from './World';
+import { cheats } from './cheats';
 import { ZoneControl, ZoneEvent } from './Zones';
 import { TowerControl, TowerEvent } from './Tower';
 
@@ -343,7 +344,7 @@ export class Match extends InkWorld {
       if (this.phase !== 'done') this.controller.update(dt, this.player, this.r.camera, this.physics);
     }
     for (const b of this.bots) {
-      if (playing) b.update(dt);
+      if (playing && !cheats.freezeBots) b.update(dt);
       else b.idle();
     }
     if (!playing) {

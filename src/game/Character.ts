@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { HEALTH, INK_TANK, PHYS, Team } from '../config';
 import { MAP_ONLY } from '../world/Physics';
+import { cheats } from './cheats';
 import { InkfinModel, Look } from './InkfinModel';
 import type { Kit } from './items';
 import { KitState } from './kit';
@@ -76,7 +77,7 @@ export class Character {
     readonly team: Team,
     readonly isPlayer: boolean,
     look: Look,
-    readonly kit: Kit,
+    public kit: Kit,
     private ctx: GameCtx,
     scene: THREE.Scene,
   ) {
@@ -123,6 +124,16 @@ export class Character {
     this.model.root.visible = true;
     this.model.popIn();
     this.syncCollider();
+  }
+
+  /** Swap weapon kit on the spot (admin god gun). */
+  setKit(k: Kit) {
+    this.kit = k;
+    this.weapon = new WeaponState(k.main);
+    this.kitState = new KitState(k);
+    this.model.weapon = k.main;
+    const wm = buildWeaponModel(k.main, this.model.inkMats[0]);
+    this.model.setWeaponModel(wm.model, wm.drum);
   }
 
   /** Moved by something we're standing on (the tower). */
@@ -300,6 +311,7 @@ export class Character {
       speed *= this.weapon.speedMul(this);
     }
     if (jetting) speed = 5.5;
+    if (this.isPlayer) speed *= cheats.speed;
 
     const target = tmp.set(mv.x * speed, 0, mv.y * speed);
     const accel = jetting ? 30 : this.grounded || this.climbing ? (this.swimming ? 55 : 45) : 12;
@@ -336,7 +348,7 @@ export class Character {
       if (inp.jump && !this.jumpHeld && this.grounded && this.weapon.tryDodge(this, this.ctx)) {
         // dualies turned the jump into a dodge roll
       } else if (inp.jump && !this.jumpHeld && this.grounded) {
-        this.vel.y = this.submerged ? PHYS.jumpSpeed * 1.12 : PHYS.jumpSpeed;
+        this.vel.y = (this.submerged ? PHYS.jumpSpeed * 1.12 : PHYS.jumpSpeed) * (this.isPlayer ? cheats.jump : 1);
         this.grounded = false;
         this.model.stretch();
         if (this.isPlayer) this.ctx.sfx.jump();
