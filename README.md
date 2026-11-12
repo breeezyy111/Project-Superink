@@ -166,6 +166,10 @@ playfab/               CloudScript (guest names) and setup guide
 - Online matchmaking with strangers (rooms are friends-only for now)
 - Performance pass (merge character meshes)
 
+## Terms and privacy
+
+The game ships with a [Terms of Service](public/terms.html) and a [Privacy Policy](public/privacy.html), served at `/terms.html` and `/privacy.html`. Players agree to them (and confirm they're 13+) when signing up or playing as a guest.
+
 ## License
 
 Copyright © 2026 Max Sabato. All rights reserved. See [LICENSE](LICENSE).
