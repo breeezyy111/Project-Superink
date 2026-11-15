@@ -6,6 +6,9 @@ export type HudSource = Pick<Match, 'pair' | 'player' | 'characters' | 'colorOf'
 import { SPECIALS, SUBS } from '../game/items';
 import { WEAPONS } from '../game/weapons';
 
+const escapeHtml = (s: unknown) =>
+  String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 export const CUTTLE_SVG = (color: string) => `
@@ -141,7 +144,7 @@ export class Hud {
       const icons = (team: 0 | 1) =>
         m.characters
           .filter((c) => c.team === team)
-          .map((c) => `<div class="ticon ${c.alive ? '' : 'dead'} ${c.isPlayer ? 'me' : ''}" title="${c.name}">${CUTTLE_SVG(m.colorOf(team))}</div>`)
+          .map((c) => `<div class="ticon ${c.alive ? '' : 'dead'} ${c.isPlayer ? 'me' : ''}" title="${escapeHtml(c.name)}">${CUTTLE_SVG(m.colorOf(team))}</div>`)
           .join('');
       this.teamA.innerHTML = icons(m.player.team);
       this.teamB.innerHTML = icons((1 - m.player.team) as Team);
