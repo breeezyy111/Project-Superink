@@ -46,6 +46,11 @@ function peerOptions(): PeerOptions {
   return { debug: 1 };
 }
 
+/** Player names come from other people's browsers: keep them short, plain text. */
+export function cleanName(n: unknown) {
+  return String(n ?? '').replace(/[<>"'`&\u0000-\u001f]/g, '').trim().slice(0, 20) || 'Player';
+}
+
 function randomCode() {
   let s = '';
   for (let i = 0; i < 5; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
@@ -141,7 +146,15 @@ export class Room {
           }
           if (msg.t === 'room') {
             const r = msg as Extract<Msg, { t: 'room' }>;
-            room.members = r.members;
+            // The host's browser sends this list, so never trust it: names are shown on screen.
+            room.members = (Array.isArray(r.members) ? r.members : []).slice(0, MAX_PLAYERS).map((m) => ({
+              ...m,
+              id: String(m.id),
+              name: cleanName(m.name),
+              kit: String(m.kit),
+              team: (m.team === 1 ? 1 : 0) as Team,
+              host: !!m.host,
+            }));
             room.settings = r.settings;
             room.myId = r.you;
             clearTimeout(timer);
@@ -185,7 +198,7 @@ export class Room {
         const known = this.members.find((m) => m.id === c.peer);
         if (known) {
           // a member changed their name / look / kit
-          Object.assign(known, { name: String(h.name).slice(0, 20), look: h.look, kit: String(h.kit) });
+          Object.assign(known, { name: cleanName(h.name), look: h.look, kit: String(h.kit) });
           this.sync();
           return;
         }
@@ -194,7 +207,7 @@ export class Room {
         const t1 = this.members.length - t0;
         const team: Team = t1 < t0 ? 1 : 0;
         this.conns.set(c.peer, c);
-        this.members.push({ id: c.peer, name: String(h.name).slice(0, 20), look: h.look, kit: String(h.kit), team, host: false });
+        this.members.push({ id: c.peer, name: cleanName(h.name), look: h.look, kit: String(h.kit), team, host: false });
         this.sync();
         return;
       }

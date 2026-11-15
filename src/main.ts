@@ -688,7 +688,8 @@ async function boot() {
 
   // ---------- admin (only the signed-in "Breezy" account) ----------
   function isAdmin() {
-    return account.mode === 'account' && [account.displayName, account.username].some((n) => ADMIN_NAMES.includes((n || '').toLowerCase()));
+    // Only the username counts: it can't be changed after sign-up, but anyone can change their display name.
+    return account.mode === 'account' && ADMIN_NAMES.includes((account.username || '').toLowerCase());
   }
   const livePlayer = () => (screen === 'story' ? story?.player : screen === 'match' ? match?.player : screen === 'hub' ? hub?.player : null) ?? null;
   const admin = new AdminPanel(sfx, {
